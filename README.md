@@ -28,6 +28,15 @@ Ensure you have the required system and Python dependencies installed. We recomm
 uv run main.py
 ```
 
+### Optional: Evdev Input Registration Setup
+By default, Pushie uses the **XDG Global Shortcuts portal** which works out of the box but is swallowed by your desktop compositor. If you want to use the **Evdev key bind method** (allowing hotkeys to pass through directly to games and apps), you must grant your user read access to `/dev/input/event*` devices without root permissions.
+
+Add your user to the `input` group:
+```bash
+sudo usermod -aG input $USER
+```
+*Note: You must log out of your desktop session and log back in (or reboot) for this change to take effect.*
+
 ### Command Line parameters
 Start minimized to tray directly:
 ```bash
