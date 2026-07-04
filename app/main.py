@@ -62,7 +62,11 @@ class MainWindow(QMainWindow):
             q_app.aboutToQuit.connect(self.engine.stop_all)
 
         # Load logo.ico as app and tray logo
-        project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        if getattr(sys, 'frozen', False):
+            project_root = getattr(sys, "_MEIPASS")
+        else:
+            project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            
         self.logo_path = os.path.join(project_root, "logo.ico")
         self.logo_icon = QIcon(self.logo_path)
         self.setWindowIcon(self.logo_icon)
