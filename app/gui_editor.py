@@ -1,9 +1,11 @@
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, 
     QPushButton, QCheckBox, QComboBox, QScrollArea, QFrame,
-    QTabWidget, QFormLayout, QSpinBox, QDoubleSpinBox, QMessageBox
+    QTabWidget, QFormLayout, QSpinBox, QDoubleSpinBox, QMessageBox,
+    QApplication, QBoxLayout
 )
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import Qt, Signal, QMimeData
+from PySide6.QtGui import QDrag, QPixmap, QCursor
 from app.storage import Macro, ActionSpec
 
 # Shared input style
@@ -97,10 +99,11 @@ class ActionRow(QFrame):
         self.main_layout.setSpacing(10)
 
         # 1. Drag handle hint
-        grip = QLabel("⠿", self)
-        grip.setStyleSheet("color: #30363d; font-size: 16px;")
-        grip.setFixedWidth(16)
-        self.main_layout.addWidget(grip)
+        self.grip = QLabel("⠿", self)
+        self.grip.setStyleSheet("color: #8b949e; font-size: 16px;")
+        self.grip.setFixedWidth(16)
+        self.grip.setCursor(Qt.CursorShape.OpenHandCursor)
+        self.main_layout.addWidget(self.grip)
 
         # 2. Action type selector
         self.type_combo = QComboBox(self)
@@ -162,6 +165,57 @@ class ActionRow(QFrame):
             self._load_properties(action.properties)
         else:
             self.on_type_changed(self.type_combo.currentText())
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            pos_in_grip = self.grip.mapFrom(self, event.position().toPoint())
+            if self.grip.rect().contains(pos_in_grip):
+                self.drag_start_position = event.position().toPoint()
+                self.grip.setCursor(Qt.CursorShape.ClosedHandCursor)
+            else:
+                self.drag_start_position = None
+        super().mousePressEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        self.grip.setCursor(Qt.CursorShape.OpenHandCursor)
+        super().mouseReleaseEvent(event)
+
+    def mouseMoveEvent(self, event):
+        if not (event.buttons() & Qt.MouseButton.LeftButton):
+            return
+        if getattr(self, "drag_start_position", None) is None:
+            return
+        if (event.position().toPoint() - self.drag_start_position).manhattanLength() < QApplication.startDragDistance():
+            return
+
+        drag = QDrag(self)
+        mime_data = QMimeData()
+        mime_data.setData("application/x-actionrow-id", b"row")
+        drag.setMimeData(mime_data)
+
+        pixmap = QPixmap(self.size())
+        pixmap.fill(Qt.GlobalColor.transparent)
+        self.render(pixmap)
+        drag.setPixmap(pixmap)
+        drag.setHotSpot(event.position().toPoint())
+
+        self.hide()
+        parent_widget = self.parentWidget()
+        layout = parent_widget.layout() if parent_widget else None
+        if not isinstance(layout, QBoxLayout):
+            layout = None
+        orig_idx = layout.indexOf(self) if layout else -1
+        if layout and orig_idx != -1:
+            layout.removeWidget(self)
+
+        self.grip.setCursor(Qt.CursorShape.OpenHandCursor)
+        self.drag_start_position = None
+
+        result = drag.exec(Qt.DropAction.MoveAction)
+        if result != Qt.DropAction.MoveAction:
+            if layout and orig_idx != -1:
+                layout.insertWidget(orig_idx, self)
+            self.show()
 
     def on_type_changed(self, action_type):
         while self.properties_layout.count():
@@ -338,6 +392,38 @@ class ActionRow(QFrame):
         return ActionSpec(action_type, props)
 
 
+class DropPlaceholder(QFrame):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setFixedHeight(44)
+        self.setStyleSheet("""
+            QFrame {
+                border: 2px dashed #388bfd;
+                border-radius: 8px;
+                background-color: rgba(56, 139, 253, 0.1);
+            }
+        """)
+
+
+class ScrollContentWidget(QWidget):
+    def __init__(self, list_widget, parent=None):
+        super().__init__(parent)
+        self.list_widget = list_widget
+        self.setAcceptDrops(True)
+
+    def dragEnterEvent(self, event):
+        self.list_widget._scroll_content_dragEnterEvent(event)
+
+    def dragMoveEvent(self, event):
+        self.list_widget._scroll_content_dragMoveEvent(event)
+
+    def dragLeaveEvent(self, event):
+        self.list_widget._scroll_content_dragLeaveEvent(event)
+
+    def dropEvent(self, event):
+        self.list_widget._scroll_content_dropEvent(event)
+
+
 class ActionListWidget(QWidget):
     def __init__(self, title, parent=None):
         super().__init__(parent)
@@ -379,7 +465,7 @@ class ActionListWidget(QWidget):
             QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }
         """)
 
-        self.scroll_content = QWidget(self)
+        self.scroll_content = ScrollContentWidget(self, self)
         self.scroll_content.setStyleSheet("background-color: transparent;")
         self.rows_layout = QVBoxLayout(self.scroll_content)
         self.rows_layout.setContentsMargins(0, 0, 0, 0)
@@ -388,6 +474,9 @@ class ActionListWidget(QWidget):
 
         self.scroll_area.setWidget(self.scroll_content)
         self.main_layout.addWidget(self.scroll_area)
+
+        self.placeholder = DropPlaceholder(self.scroll_content)
+        self.placeholder.hide()
 
     def populate(self, actions):
         self.clear_all()
@@ -426,6 +515,112 @@ class ActionListWidget(QWidget):
         if idx < self.rows_layout.count() - 2:
             self.rows_layout.removeWidget(row_widget)
             self.rows_layout.insertWidget(idx + 1, row_widget)
+
+    def _calculate_insert_idx(self, pos):
+        # 1. Collect all visible ActionRow widgets in layout order
+        rows = []
+        for i in range(self.rows_layout.count()):
+            item = self.rows_layout.itemAt(i)
+            if item:
+                w = item.widget()
+                if isinstance(w, ActionRow) and w.isVisible():
+                    rows.append(w)
+        
+        if not rows:
+            return 0
+            
+        spacing = self.rows_layout.spacing()
+        p_idx = self.rows_layout.indexOf(self.placeholder)
+        
+        # 2. Get the placeholder's logical index
+        p_logical_idx = -1
+        if p_idx != -1:
+            p_logical_idx = 0
+            for i in range(p_idx):
+                item = self.rows_layout.itemAt(i)
+                if item and item.widget():
+                    widget = item.widget()
+                    if isinstance(widget, ActionRow) and widget.isVisible():
+                        p_logical_idx += 1
+
+        # 3. Calculate placeholder's unshifted Y boundary
+        p_unshifted_y = 0
+        if p_logical_idx != -1:
+            for i in range(p_logical_idx):
+                height = rows[i].height()
+                if height <= 0:
+                    height = 44
+                p_unshifted_y += height + spacing
+                
+        # 4. Map the mouse pos.y() to the unshifted Y coordinate
+        mouse_y = pos.y()
+        if p_idx != -1:
+            p_space = self.placeholder.height() + spacing
+            if mouse_y > p_unshifted_y:
+                mouse_y = max(p_unshifted_y, mouse_y - p_space)
+
+        # 5. Find the insertion index in the unshifted row centers list
+        current_y = 0
+        for logical_idx, w in enumerate(rows):
+            height = w.height()
+            if height <= 0:
+                height = 44
+            center_y = current_y + height / 2
+            if mouse_y < center_y:
+                return logical_idx
+            current_y += height + spacing
+            
+        return len(rows)
+
+    def _update_placeholder(self, pos):
+        import time
+        now = time.time()
+        if self.rows_layout.indexOf(self.placeholder) != -1:
+            if now - getattr(self, "_last_placeholder_update", 0) < 0.05:
+                return
+        self._last_placeholder_update = now
+
+        idx = self._calculate_insert_idx(pos)
+        current_idx = self.rows_layout.indexOf(self.placeholder)
+        if current_idx != idx:
+            if current_idx != -1:
+                self.rows_layout.removeWidget(self.placeholder)
+            self.rows_layout.insertWidget(idx, self.placeholder)
+            self.placeholder.show()
+
+    def _scroll_content_dragEnterEvent(self, event):
+        if event.mimeData().hasFormat("application/x-actionrow-id"):
+            event.acceptProposedAction()
+            pos = event.position().toPoint()
+            self._update_placeholder(pos)
+
+    def _scroll_content_dragMoveEvent(self, event):
+        if event.mimeData().hasFormat("application/x-actionrow-id"):
+            event.acceptProposedAction()
+            pos = event.position().toPoint()
+            self._update_placeholder(pos)
+
+    def _scroll_content_dragLeaveEvent(self, event):
+        self.rows_layout.removeWidget(self.placeholder)
+        self.placeholder.hide()
+
+    def _scroll_content_dropEvent(self, event):
+        source = event.source()
+        if source and isinstance(source, ActionRow):
+            idx = self.rows_layout.indexOf(self.placeholder)
+            if idx == -1:
+                pos = event.position().toPoint()
+                idx = self._calculate_insert_idx(pos)
+            
+            self.rows_layout.removeWidget(self.placeholder)
+            self.placeholder.hide()
+            
+            self.rows_layout.removeWidget(source)
+            self.rows_layout.insertWidget(idx, source)
+            source.show()
+            
+            event.setDropAction(Qt.DropAction.MoveAction)
+            event.accept()
 
     def get_actions(self):
         actions = []

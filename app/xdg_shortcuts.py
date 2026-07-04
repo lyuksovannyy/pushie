@@ -73,7 +73,7 @@ class XDGShortcutsClient(QObject):
             self.error_occurred.emit("Portal interface not initialized")
             return
         
-        logger.info("Initializing XDG Global Shortcuts portal session...")
+        logger.debug("Initializing XDG Global Shortcuts portal session...")
         token = f"pushie_session_{uuid.uuid4().hex[:8]}"
         try:
             req_path = self.shortcuts_iface.CreateSession({"session_handle_token": token})
@@ -90,7 +90,7 @@ class XDGShortcutsClient(QObject):
     def _on_session_response(self, response_code: int, results: dict[str, Any]) -> None:
         if response_code == 0 and "session_handle" in results:
             self.session_path = str(results["session_handle"])
-            logger.info(f"XDG shortcuts session created successfully: {self.session_path}")
+            logger.debug(f"XDG shortcuts session created successfully: {self.session_path}")
             self.session_ready.emit(self.session_path)
         else:
             logger.error(f"CreateSession failed with response code: {response_code}")
@@ -102,7 +102,7 @@ class XDGShortcutsClient(QObject):
             self.error_occurred.emit("Session not established for binding")
             return
 
-        logger.info("Binding shortcuts dynamically on XDG portal session...")
+        logger.debug("Binding shortcuts dynamically on XDG portal session...")
         formatted_shortcuts = []
         for s in shortcuts_list:
             props = {"description": s["name"]}
@@ -149,7 +149,7 @@ class XDGShortcutsClient(QObject):
             logger.error("Session not established for configuration")
             self.error_occurred.emit("Session not established for configuration")
             return
-        logger.info("Opening portal configuration interface...")
+        logger.debug("Opening portal configuration interface...")
         try:
             self.shortcuts_iface.ConfigureShortcuts(
                 self.session_path,
@@ -162,7 +162,7 @@ class XDGShortcutsClient(QObject):
 
     def _on_shortcuts_changed(self, session: object, shortcuts: list) -> None:
         if self.session_path and str(session) == self.session_path:
-            logger.info("ShortcutsChanged signal received from portal.")
+            logger.debug("ShortcutsChanged signal received from portal.")
             shortcuts_bound: list[ShortcutQueryResult] = []
             for sid, props in shortcuts:
                 trigger_desc = str(props.get("trigger_description", ""))

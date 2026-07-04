@@ -201,7 +201,7 @@ class MainWindow(QMainWindow):
 
     # --- DBus Portal Callbacks ---
     def on_portal_session_ready(self, session_path):
-        logger.info(f"XDG desktop portal shortcuts session ready: {session_path}")
+        logger.debug(f"XDG desktop portal shortcuts session ready: {session_path}")
         self.rebind_all_keys()
 
     def rebind_all_keys(self):
@@ -229,13 +229,13 @@ class MainWindow(QMainWindow):
         self.home_page.populate_macros(self.macros)
 
     def on_shortcut_activated(self, shortcut_id):
-        logger.info(f"Hotkey event detected: Activated shortcut ID: {shortcut_id}")
+        logger.debug(f"Hotkey event detected: Activated shortcut ID: {shortcut_id}")
         macro = self.find_macro_by_id(shortcut_id)
         if macro and macro.active:
             self.engine.handle_activate(macro)
 
     def on_shortcut_deactivated(self, shortcut_id):
-        logger.info(f"Hotkey event detected: Deactivated shortcut ID: {shortcut_id}")
+        logger.debug(f"Hotkey event detected: Deactivated shortcut ID: {shortcut_id}")
         macro = self.find_macro_by_id(shortcut_id)
         if macro and macro.active:
             self.engine.handle_deactivate(macro)
