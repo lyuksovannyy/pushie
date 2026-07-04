@@ -9,21 +9,10 @@ from app.storage import Macro
 
 try:
     import evdev
-    from evdev import InputDevice, UInput, UInput as UInputClass # Wait, earlier we used UInput
+    from evdev import InputDevice
 except ImportError:
     evdev = None
     InputDevice = None
-    UInput = None
-
-# Let's import UInput correctly from evdev (it's UInput class)
-if evdev is not None:
-    try:
-        from evdev import UInput
-    except ImportError:
-        try:
-            from evdev import Uinput as UInput
-        except ImportError:
-            UInput = None
 
 logger = logging.getLogger("pushie.evdev_shortcuts")
 
@@ -65,7 +54,6 @@ class EvdevShortcutsClient(QObject):
         super().__init__(parent)
         self.macros: list[Macro] = []
         self.devices: dict[str, Any] = {}          # path -> InputDevice
-        self.uinputs: dict[str, Any] = {}          # path -> UInput
         self.threads: dict[str, threading.Thread] = {}
         self.stop_events: dict[str, threading.Event] = {}
         self.pressed_keys: set[str] = set()
@@ -150,28 +138,11 @@ class EvdevShortcutsClient(QObject):
                 pass
 
     def start_device_reader(self, path: str, dev: Any) -> None:
-        if evdev is None or InputDevice is None or UInput is None:
-            return
-
-        # Perform the slower grabbing operations outside of self.lock
-        grabbed = False
-        ui = None
-        try:
-            dev.grab()
-            ui = UInput.from_device(dev)
-            grabbed = True
-        except Exception as e:
-            logger.warning(f"Could not grab evdev device {dev.name} or create uinput: {e}")
-
-        if not grabbed:
+        if evdev is None or InputDevice is None:
             return
 
         with self.lock:
             self.devices[path] = dev
-            if ui:
-                self.uinputs[path] = ui
-
-        logger.info(f"Grabbed evdev device: {dev.name}")
 
         stop_event = threading.Event()
         with self.lock:
@@ -191,19 +162,7 @@ class EvdevShortcutsClient(QObject):
             self.stop_events[path].set()
             del self.stop_events[path]
         if path in self.devices:
-            dev = self.devices[path]
-            try:
-                dev.ungrab()
-            except Exception:
-                pass
             del self.devices[path]
-        if path in self.uinputs:
-            ui = self.uinputs[path]
-            try:
-                ui.close()
-            except Exception:
-                pass
-            del self.uinputs[path]
         if path in self.threads:
             del self.threads[path]
 
@@ -228,24 +187,11 @@ class EvdevShortcutsClient(QObject):
 
                 for key_event in dev.read():
                     if key_event.type != evdev.ecodes.EV_KEY or key_event.value == 2:
-                        # Forward non-key events directly
-                        if path in self.uinputs:
-                            try:
-                                self.uinputs[path].write(key_event.type, key_event.code, key_event.value)
-                                self.uinputs[path].syn()
-                            except Exception:
-                                pass
                         continue
 
                     keycode = key_event.code
                     keyname = evdev.ecodes.KEY.get(keycode)
                     if not keyname:
-                        if path in self.uinputs:
-                            try:
-                                self.uinputs[path].write(key_event.type, key_event.code, key_event.value)
-                                self.uinputs[path].syn()
-                            except Exception:
-                                pass
                         continue
 
                     key = str(keyname).removeprefix("KEY_").lower()
@@ -273,21 +219,6 @@ class EvdevShortcutsClient(QObject):
                                     if any(evdev_key_matches(key, {k}) for k in chord):
                                         is_macro_key = True
                                         matching_macros.append((m, chord))
-
-                    swallow = False
-                    if is_macro_key:
-                        for m, _ in matching_macros:
-                            if not getattr(m, "evdev_pass_through", False):
-                                swallow = True
-                                break
-
-                    if not swallow:
-                        if path in self.uinputs:
-                            try:
-                                self.uinputs[path].write(key_event.type, key_event.code, key_event.value)
-                                self.uinputs[path].syn()
-                            except Exception:
-                                pass
 
                     if is_macro_key:
                         for m, chord in matching_macros:
