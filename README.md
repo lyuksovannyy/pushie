@@ -24,7 +24,7 @@ Pushie requires PySide6, PyYAML, dbus-python, and PyGObject.
 Ensure you have the required system and Python dependencies installed. We recommend using `uv` to manage environment requirements:
 
 ```bash
-# Run via uv directly
+# Run developers mode via uv
 uv run main.py
 ```
 
@@ -32,6 +32,29 @@ uv run main.py
 Start minimized to tray directly:
 ```bash
 uv run main.py --minimized
+```
+
+---
+
+## How to Build & Install Standalone Application
+
+### 1. Compile into stand-alone binary:
+Execute the bundle shell script which creates a single binary of Pushie with built-in asset dependencies and the custom launcher icon styling:
+```bash
+./build.sh
+```
+This produces the standalone binary at: `./dist/pushie`
+
+### 2. Install to system:
+Move the compiled application to your system binary directory (requires sudo write permission):
+```bash
+sudo cp dist/pushie /usr/local/bin/
+```
+
+### 3. Register Desktop Desktop Entry Launcher:
+Register the launcher and copy the application layout icons to desktop search indexes:
+```bash
+./register-app.sh
 ```
 
 ---
