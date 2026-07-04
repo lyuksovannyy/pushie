@@ -1,9 +1,12 @@
 import subprocess
 import threading
 import time
+import logging
 from typing import Optional, Any
 from collections.abc import Sequence, Mapping
 from app.storage import Macro, ActionSpec
+
+logger = logging.getLogger("pushie.engine")
 
 def run_cmd(*args: str) -> str:
     try:
@@ -21,12 +24,12 @@ class PulseAudioHelper:
     @staticmethod
     def toggle_mic(source: str, state: bool) -> None:
         # State: True = Unmuted (mute=0), False = Muted (mute=1)
-        print(f"{'Unmuting' if state else 'Muting'} mic: {source}")
+        logger.info(f"{'Unmuting' if state else 'Muting'} mic: {source}")
         run_cmd("pactl", "set-source-mute", source, "0" if state else "1")
 
     @staticmethod
     def set_source_volume(source: str, volume: str) -> None:
-        print(f"Setting source volume for {source} to {volume}")
+        logger.info(f"Setting source volume for {source} to {volume}")
         run_cmd("pactl", "set-source-volume", source, volume)
 
     @staticmethod
@@ -56,7 +59,7 @@ class PulseAudioHelper:
 
     @classmethod
     def apply_rules(cls, rules: Sequence[str], source: str, volume: str) -> None:
-        print(f"=== Applying rules: {rules} to source '{source}' (vol: {volume}) ===")
+        logger.info(f"=== Applying rules: {rules} to source '{source}' (vol: {volume}) ===")
         muted_apps: dict[str, bool] = {}
         allowed_apps: dict[str, bool] = {}
         for item in rules:
@@ -99,6 +102,7 @@ class MacroEngine:
         if not macro.active:
             return
         
+        logger.info(f"Activating macro: {macro.name} (ID: {macro.id})")
         with self.lock:
             self._active_macros[macro.id] = macro
             if macro.work_only_pressed:
@@ -122,6 +126,7 @@ class MacroEngine:
             return
         
         if macro.work_only_pressed:
+            logger.info(f"Deactivating macro: {macro.name} (ID: {macro.id})")
             with self.lock:
                 self._active_macros[macro.id] = macro
                 self._stop_macro_thread_locked(macro.id)
@@ -131,6 +136,7 @@ class MacroEngine:
         if not actions:
             return
             
+        logger.info(f"Starting action sequence thread for macro ID: {macro.id} (loop={loop})")
         stop_event = threading.Event()
         t = threading.Thread(
             target=self._execute_actions_loop,
@@ -142,6 +148,7 @@ class MacroEngine:
 
     def _stop_macro_thread_locked(self, macro_id: str) -> None:
         if macro_id in self._running_actions:
+            logger.info(f"Stopping action sequence thread for macro ID: {macro_id}")
             t, stop_event = self._running_actions[macro_id]
             stop_event.set()
             t.join(timeout=0.1)
@@ -167,13 +174,21 @@ class MacroEngine:
                 props = action.properties
                 
                 if atype == "key_press":
-                    subprocess.run(["xdotool", "keydown", props.get("key", "")], check=False)
+                    key = props.get("key", "")
+                    logger.info(f"Action done: press key '{key}'")
+                    subprocess.run(["xdotool", "keydown", key], check=False)
                 elif atype == "key_release":
-                    subprocess.run(["xdotool", "keyup", props.get("key", "")], check=False)
+                    key = props.get("key", "")
+                    logger.info(f"Action done: release key '{key}'")
+                    subprocess.run(["xdotool", "keyup", key], check=False)
                 elif atype == "key_tap":
-                    subprocess.run(["xdotool", "key", props.get("key", "")], check=False)
+                    key = props.get("key", "")
+                    logger.info(f"Action done: tap key '{key}'")
+                    subprocess.run(["xdotool", "key", key], check=False)
                 elif atype == "mouse_click":
-                    subprocess.run(["xdotool", "click", str(props.get("button", 1))], check=False)
+                    btn = props.get("button", 1)
+                    logger.info(f"Action done: click mouse button {btn}")
+                    subprocess.run(["xdotool", "click", str(btn)], check=False)
                 elif atype == "mouse_move":
                     xp = float(props.get("xp", 0.0))
                     x = int(props.get("x", 0))
@@ -181,21 +196,25 @@ class MacroEngine:
                     y = int(props.get("y", 0))
                     abs_x = int(display_w * xp + x)
                     abs_y = int(display_h * yp + y)
+                    logger.info(f"Action done: move mouse to ({abs_x}, {abs_y})")
                     subprocess.run(['ydotool', 'mousemove', '--absolute', '0', '0'], check=False)
                     subprocess.run(['ydotool', 'mousemove', str(abs_x), str(abs_y)], check=False)
                 elif atype == "delay":
                     ms = props.get("milliseconds", 100)
+                    logger.info(f"Action done: delay {ms}ms")
                     time.sleep(ms / 1000.0)
                 elif atype == "mic_toggle":
                     unmute = props.get("unmute", True)
                     src = PulseAudioHelper.get_default_source()
                     if src:
+                        logger.info(f"Action doing: mic_toggle target_unmute={unmute}")
                         PulseAudioHelper.toggle_mic(src, unmute)
                 elif atype == "mic_rules":
                     rules = props.get("rules", [])
                     vol = str(props.get("volume", "1.0"))
                     src = PulseAudioHelper.get_default_source()
                     if src:
+                        logger.info(f"Action doing: mic_rules volume={vol} rules={rules}")
                         PulseAudioHelper.set_source_volume(src, vol)
                         PulseAudioHelper.apply_rules(rules, src, vol)
 
@@ -203,6 +222,7 @@ class MacroEngine:
                 break
 
     def stop_all(self) -> None:
+        logger.info("Stopping all macros...")
         with self.lock:
             # Capture currently running/held macros
             running_macro_ids = list(self._running_actions.keys())

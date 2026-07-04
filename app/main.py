@@ -1,5 +1,9 @@
 import sys
 import os
+import logging
+
+logger = logging.getLogger("pushie")
+
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QStackedWidget, QSystemTrayIcon, QMenu
 )
@@ -144,6 +148,7 @@ class MainWindow(QMainWindow):
 
     # --- Macro updates & saves ---
     def on_macro_saved(self, macro):
+        logger.info(f"Macro saved/updated: {macro.name} (ID: {macro.id})")
         # Update or append
         existing = self.find_macro_by_id(macro.id)
         if existing:
@@ -159,6 +164,7 @@ class MainWindow(QMainWindow):
         self.navigate_to_home()
 
     def on_macro_deleted(self, macro_id):
+        logger.info(f"Macro deleted: ID: {macro_id}")
         # Delete from list and storage
         self.macros = [m for m in self.macros if m.id != macro_id]
         delete_macro(macro_id)
@@ -169,6 +175,7 @@ class MainWindow(QMainWindow):
         self.navigate_to_home()
 
     def on_active_toggled(self, macro_id, active):
+        logger.info(f"Macro active status toggled: ID: {macro_id} -> Active: {active}")
         # Keep list in sync and save
         macro = self.find_macro_by_id(macro_id)
         if macro:
@@ -181,18 +188,20 @@ class MainWindow(QMainWindow):
         macro = self.find_macro_by_id(macro_id)
         if macro:
             macro.work_only_pressed = not macro.work_only_pressed
+            logger.info(f"Macro work mode toggled: ID: {macro_id} (Work Only Pressed: {macro.work_only_pressed})")
             save_macro(macro)
             self.home_page.populate_macros(self.macros)
             # Update key bindings metadata on portal if necessary
             self.rebind_all_keys()
 
     def trigger_hotkey_bind(self, macro_id):
+        logger.info(f"User requested portal binder for macro ID: {macro_id}")
         # Trigger the portal shortcuts configuration settings dialog/view
         self.shortcuts_client.configure_shortcuts()
 
     # --- DBus Portal Callbacks ---
     def on_portal_session_ready(self, session_path):
-        print(f"XDG desktop portal shortcuts session ready: {session_path}")
+        logger.info(f"XDG desktop portal shortcuts session ready: {session_path}")
         self.rebind_all_keys()
 
     def rebind_all_keys(self):
@@ -212,17 +221,21 @@ class MainWindow(QMainWindow):
             macro = self.find_macro_by_id(mid)
             if macro:
                 # Store the updated display or trigger label returned by portals
+                if macro.hotkey != trigger:
+                    logger.info(f"Hotkey changed/bound by portal: macro ID: {mid} -> '{trigger}'")
                 macro.hotkey = trigger
                 save_macro(macro)
         
         self.home_page.populate_macros(self.macros)
 
     def on_shortcut_activated(self, shortcut_id):
+        logger.info(f"Hotkey event detected: Activated shortcut ID: {shortcut_id}")
         macro = self.find_macro_by_id(shortcut_id)
         if macro and macro.active:
             self.engine.handle_activate(macro)
 
     def on_shortcut_deactivated(self, shortcut_id):
+        logger.info(f"Hotkey event detected: Deactivated shortcut ID: {shortcut_id}")
         macro = self.find_macro_by_id(shortcut_id)
         if macro and macro.active:
             self.engine.handle_deactivate(macro)
@@ -237,6 +250,14 @@ class MainWindow(QMainWindow):
 def main():
     import signal
     from PySide6.QtCore import QTimer
+
+    # Configure global logging
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s [%(levelname)s] %(name)s: %(message)s',
+        handlers=[logging.StreamHandler(sys.stdout)]
+    )
+    logger.info("Initializing Pushie application...")
 
     # Check for minimized launch argument
     minimized = "--minimized" in sys.argv
