@@ -68,5 +68,22 @@ class TestStorage(unittest.TestCase):
         self.assertEqual(len(loaded), 1)
         self.assertEqual(loaded[0].id, "macro_fallback")
 
+    def test_evdev_fields_storage(self):
+        # Create config directory manually
+        os.makedirs(os.path.join(self.temp_dir, ".config"), exist_ok=True)
+        macro = Macro(
+            "macro_evdev_test", "Evdev Macro",
+            bind_method="evdev", evdev_pass_through=True,
+            xdg_hotkey="ctrl+x", evdev_hotkey="f13"
+        )
+        save_macro(macro)
+        
+        loaded = load_macros()
+        self.assertEqual(len(loaded), 1)
+        self.assertEqual(loaded[0].bind_method, "evdev")
+        self.assertTrue(loaded[0].evdev_pass_through)
+        self.assertEqual(loaded[0].xdg_hotkey, "ctrl+x")
+        self.assertEqual(loaded[0].evdev_hotkey, "f13")
+
 if __name__ == '__main__':
     unittest.main()

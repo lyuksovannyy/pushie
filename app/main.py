@@ -13,6 +13,7 @@ from PySide6.QtCore import Qt, SLOT, Slot
 from app.storage import load_macros, save_macro, delete_macro
 from app.engine import MacroEngine
 from app.xdg_shortcuts import XDGShortcutsClient
+from app.evdev_shortcuts import EvdevShortcutsClient
 from app.gui_home import HomePage
 from app.gui_editor import MacroEditor
 
@@ -31,6 +32,12 @@ class MainWindow(QMainWindow):
         self.macros = load_macros()
         self.engine = MacroEngine()
         self.shortcuts_client = XDGShortcutsClient(self)
+        self.evdev_client = EvdevShortcutsClient(self)
+        self.evdev_client.update_macros(self.macros)
+        self.recording_evdev_macro_id = None
+
+        from PySide6.QtCore import QTimer
+        QTimer.singleShot(200, self.evdev_client.scan_devices)
 
         # 2. Main Stacked Widget
         self.stack = QStackedWidget(self)
@@ -49,6 +56,7 @@ class MainWindow(QMainWindow):
         self.home_page.hotkey_requested.connect(self.trigger_hotkey_bind)
         self.home_page.toggle_mode_changed.connect(self.toggle_macro_work_mode)
         self.home_page.active_toggled.connect(self.on_active_toggled)
+        self.home_page.bind_method_toggled.connect(self.on_bind_method_toggled)
 
         self.editor_page.saved.connect(self.on_macro_saved)
         self.editor_page.cancelled.connect(self.navigate_to_home)
@@ -59,6 +67,12 @@ class MainWindow(QMainWindow):
         self.shortcuts_client.shortcuts_configured.connect(self.on_portal_shortcuts_configured)
         self.shortcuts_client.shortcut_activated.connect(self.on_shortcut_activated)
         self.shortcuts_client.shortcut_deactivated.connect(self.on_shortcut_deactivated)
+
+        # Evdev triggers
+        self.evdev_client.shortcut_activated.connect(self.on_shortcut_activated)
+        self.evdev_client.shortcut_deactivated.connect(self.on_shortcut_deactivated)
+        self.evdev_client.raw_key_pressed.connect(self.on_evdev_raw_key_pressed)
+        self.evdev_client.status_changed.connect(self.home_page.set_evdev_status)
 
         # Wire clean exit hook to stop all macros when app exits
         q_app = QApplication.instance()
@@ -184,6 +198,15 @@ class MainWindow(QMainWindow):
             # Rebind keys so deactivated ones don't trigger
             self.rebind_all_keys()
 
+    def on_bind_method_toggled(self, macro_id, new_method):
+        logger.info(f"Macro bind method toggled: ID: {macro_id} -> {new_method}")
+        macro = self.find_macro_by_id(macro_id)
+        if macro:
+            macro.bind_method = new_method
+            save_macro(macro)
+            self.rebind_all_keys()
+            self.home_page.populate_macros(self.macros)
+
     def toggle_macro_work_mode(self, macro_id):
         macro = self.find_macro_by_id(macro_id)
         if macro:
@@ -195,9 +218,35 @@ class MainWindow(QMainWindow):
             self.rebind_all_keys()
 
     def trigger_hotkey_bind(self, macro_id):
-        logger.info(f"User requested portal binder for macro ID: {macro_id}")
-        # Trigger the portal shortcuts configuration settings dialog/view
-        self.shortcuts_client.configure_shortcuts()
+        macro = self.find_macro_by_id(macro_id)
+        if not macro:
+            return
+        
+        if getattr(macro, "bind_method", "xdg") == "evdev":
+            if getattr(self, "recording_evdev_macro_id", None) == macro_id:
+                logger.info(f"User cancelled evdev binder for macro ID: {macro_id}")
+                self.recording_evdev_macro_id = None
+                self.home_page.set_hotkey_btn_recording(macro_id, False)
+            else:
+                logger.info(f"User requested evdev binder for macro ID: {macro_id}")
+                self.recording_evdev_macro_id = macro_id
+                self.home_page.set_hotkey_btn_recording(macro_id, True)
+        else:
+            logger.info(f"User requested portal binder for macro ID: {macro_id}")
+            self.shortcuts_client.configure_shortcuts()
+
+    def on_evdev_raw_key_pressed(self, key):
+        macro_id = getattr(self, "recording_evdev_macro_id", None)
+        if macro_id:
+            logger.info(f"Evdev key recorded: '{key}' for macro ID: {macro_id}")
+            self.recording_evdev_macro_id = None
+            macro = self.find_macro_by_id(macro_id)
+            if macro:
+                macro.evdev_hotkey = key
+                save_macro(macro)
+                self.rebind_all_keys()
+                self.home_page.set_hotkey_btn_recording(macro_id, False)
+                self.home_page.populate_macros(self.macros)
 
     # --- DBus Portal Callbacks ---
     def on_portal_session_ready(self, session_path):
@@ -209,9 +258,11 @@ class MainWindow(QMainWindow):
         # to ensure inactive ones are not unregistered from the portal session
         bind_list = []
         for m in self.macros:
-            bind_list.append({"id": m.id, "name": m.name, "trigger": m.hotkey})
+            if getattr(m, "bind_method", "xdg") == "xdg":
+                bind_list.append({"id": m.id, "name": m.name, "trigger": m.hotkey})
         
         self.shortcuts_client.bind_shortcuts(bind_list)
+        self.evdev_client.update_macros(self.macros)
 
     def on_portal_shortcuts_configured(self, bound_list):
         # Update local macro hotkey state with portal response

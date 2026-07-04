@@ -12,7 +12,10 @@ class MacroDict(TypedDict):
     id: str
     name: str
     description: str
-    hotkey: str
+    xdg_hotkey: str
+    evdev_hotkey: str
+    bind_method: str
+    evdev_pass_through: bool
     work_only_pressed: bool
     loop_while_held: bool
     active: bool
@@ -38,24 +41,56 @@ class Macro:
         loop_while_held: bool = False, 
         active: bool = True, 
         press_actions: Optional[list[ActionSpec]] = None, 
-        release_actions: Optional[list[ActionSpec]] = None
+        release_actions: Optional[list[ActionSpec]] = None,
+        bind_method: str = "xdg",
+        evdev_pass_through: bool = False,
+        xdg_hotkey: str = "",
+        evdev_hotkey: str = ""
     ) -> None:
         self.id: str = id_
         self.name: str = name
         self.description: str = description
-        self.hotkey: str = hotkey
         self.work_only_pressed: bool = work_only_pressed
         self.loop_while_held: bool = loop_while_held
         self.active: bool = active
         self.press_actions: list[ActionSpec] = press_actions or []
         self.release_actions: list[ActionSpec] = release_actions or []
+        self.bind_method: str = bind_method
+        self.evdev_pass_through: bool = evdev_pass_through
+
+        if hotkey:
+            if bind_method == "evdev":
+                self.evdev_hotkey: str = evdev_hotkey or hotkey
+                self.xdg_hotkey: str = xdg_hotkey
+            else:
+                self.xdg_hotkey: str = xdg_hotkey or hotkey
+                self.evdev_hotkey: str = evdev_hotkey
+        else:
+            self.xdg_hotkey: str = xdg_hotkey
+            self.evdev_hotkey: str = evdev_hotkey
+
+    @property
+    def hotkey(self) -> str:
+        if self.bind_method == "evdev":
+            return self.evdev_hotkey
+        return self.xdg_hotkey
+
+    @hotkey.setter
+    def hotkey(self, value: str) -> None:
+        if self.bind_method == "evdev":
+            self.evdev_hotkey = value
+        else:
+            self.xdg_hotkey = value
 
     def to_dict(self) -> MacroDict:
         return {
             "id": self.id,
             "name": self.name,
             "description": self.description,
-            "hotkey": self.hotkey,
+            "xdg_hotkey": self.xdg_hotkey,
+            "evdev_hotkey": self.evdev_hotkey,
+            "bind_method": self.bind_method,
+            "evdev_pass_through": self.evdev_pass_through,
             "work_only_pressed": self.work_only_pressed,
             "loop_while_held": self.loop_while_held,
             "active": self.active,
@@ -135,6 +170,10 @@ def load_macros() -> list[Macro]:
             d.get("loop_while_held", False),
             d.get("active", True),
             press_actions,
-            release_actions
+            release_actions,
+            bind_method=d.get("bind_method", "xdg"),
+            evdev_pass_through=d.get("evdev_pass_through", False),
+            xdg_hotkey=d.get("xdg_hotkey", ""),
+            evdev_hotkey=d.get("evdev_hotkey", "")
         ))
     return macros

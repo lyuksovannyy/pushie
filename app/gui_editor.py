@@ -794,6 +794,13 @@ class MacroEditor(QWidget):
         self.hold_chk.setChecked(macro.work_only_pressed)
         self.loop_chk.setChecked(macro.loop_while_held)
         self.loop_chk.setEnabled(macro.work_only_pressed)
+
+        # Store keys and config locally in the GUI class
+        self._xdg_hotkey = getattr(macro, "xdg_hotkey", getattr(macro, "hotkey", ""))
+        self._evdev_hotkey = getattr(macro, "evdev_hotkey", "")
+        self._evdev_pass_through = getattr(macro, "evdev_pass_through", False)
+        self.bind_method = getattr(macro, "bind_method", "xdg")
+
         self.press_list_widget.populate(macro.press_actions)
         self.release_list_widget.populate(macro.release_actions)
         self.delete_btn.setVisible(True)
@@ -804,6 +811,12 @@ class MacroEditor(QWidget):
         self.title_label.setText("Create Macro")
         self.name_in.clear()
         self.desc_in.clear()
+        
+        self._xdg_hotkey = ""
+        self._evdev_hotkey = ""
+        self._evdev_pass_through = False
+        self.bind_method = "xdg"
+        
         self.hold_chk.setChecked(True)
         self.loop_chk.setChecked(False)
         self.loop_chk.setEnabled(True)
@@ -816,15 +829,21 @@ class MacroEditor(QWidget):
         if not name:
             name = "Unnamed Macro"
 
+        method = getattr(self, "bind_method", "xdg")
+
         macro = Macro(
             self.editing_macro_id,
             name,
             self.desc_in.text().strip(),
-            "",
-            self.hold_chk.isChecked(),
-            self.loop_chk.isChecked(),
-            True,
-            self.press_list_widget.get_actions(),
-            self.release_list_widget.get_actions()
+            hotkey="",
+            work_only_pressed=self.hold_chk.isChecked(),
+            loop_while_held=self.loop_chk.isChecked(),
+            active=True,
+            press_actions=self.press_list_widget.get_actions(),
+            release_actions=self.release_list_widget.get_actions(),
+            bind_method=method,
+            evdev_pass_through=getattr(self, "_evdev_pass_through", False),
+            xdg_hotkey=self._xdg_hotkey,
+            evdev_hotkey=self._evdev_hotkey
         )
         self.saved.emit(macro)

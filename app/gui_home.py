@@ -51,6 +51,7 @@ class MacroWidget(QFrame):
     hotkey_requested = Signal(str)
     toggle_mode_changed = Signal(str)
     active_toggled = Signal(str, bool)
+    bind_method_toggled = Signal(str, str)
 
     def __init__(self, macro, parent=None):
         super().__init__(parent)
@@ -139,6 +140,27 @@ class MacroWidget(QFrame):
         edit_btn.clicked.connect(lambda: self.edit_requested.emit(self.macro.id))
         footer.addWidget(edit_btn)
 
+        self.method_toggle_btn = QPushButton(self)
+        self.method_toggle_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.method_toggle_btn.setStyleSheet("""
+            QPushButton {
+                background-color: transparent;
+                color: #8b949e;
+                border: 1px solid #30363d;
+                border-radius: 6px;
+                padding: 4px 12px;
+                font-size: 11px;
+            }
+            QPushButton:hover {
+                color: #e6edf3;
+                border-color: #8b949e;
+                background-color: #21262d;
+            }
+        """)
+        self._update_method_toggle()
+        self.method_toggle_btn.clicked.connect(self._on_method_toggle_clicked)
+        footer.addWidget(self.method_toggle_btn)
+
         footer.addStretch()
 
         self.active_btn = QPushButton(self)
@@ -152,6 +174,23 @@ class MacroWidget(QFrame):
         mode = "Hold" if self.macro.work_only_pressed else "Toggle"
         key = self.macro.hotkey or "Click to bind"
         self.hotkey_btn.setText(f"⌨ {key}  [{mode}]")
+
+    def _update_method_toggle(self):
+        method = getattr(self.macro, "bind_method", "xdg")
+        if method == "evdev":
+            self.method_toggle_btn.setText("⚡ evdev")
+        else:
+            self.method_toggle_btn.setText("🌐 xdg")
+
+    def _on_method_toggle_clicked(self):
+        current_method = getattr(self.macro, "bind_method", "xdg")
+        new_method = "xdg" if current_method == "evdev" else "evdev"
+        self.macro.bind_method = new_method
+        from app.storage import save_macro
+        save_macro(self.macro)
+        self._update_method_toggle()
+        self._update_hotkey_text() # hotkey changes based on bind method property!
+        self.bind_method_toggled.emit(self.macro.id, new_method)
 
     def _update_active_state(self):
         if self.macro.active:
@@ -200,6 +239,7 @@ class HomePage(QWidget):
     hotkey_requested = Signal(str)
     toggle_mode_changed = Signal(str)
     active_toggled = Signal(str, bool)
+    bind_method_toggled = Signal(str, str)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -219,6 +259,19 @@ class HomePage(QWidget):
         top_bar.addWidget(title)
 
         top_bar.addStretch()
+
+        # Evdev status label
+        self.evdev_status_lbl = QLabel("🔄 Scanning evdev...", self)
+        self.evdev_status_lbl.setStyleSheet("""
+            color: #f2cc60;
+            font-size: 11px;
+            font-weight: 600;
+            background-color: transparent;
+            border: none;
+            padding: 4px 0px;
+            margin-right: 12px;
+        """)
+        top_bar.addWidget(self.evdev_status_lbl)
 
         create_btn = QPushButton("+ Create Macro", self)
         create_btn.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -284,6 +337,7 @@ class HomePage(QWidget):
             card.hotkey_requested.connect(self.hotkey_requested.emit)
             card.toggle_mode_changed.connect(self.toggle_mode_changed.emit)
             card.active_toggled.connect(self.active_toggled.emit)
+            card.bind_method_toggled.connect(self.bind_method_toggled.emit)
 
             self.grid_layout.addWidget(card, row, col)
             self.cards[macro.id] = card
@@ -291,3 +345,65 @@ class HomePage(QWidget):
         # Push cards to top
         row_count = (len(macros) + cols - 1) // cols
         self.grid_layout.setRowStretch(max(1, row_count), 1)
+
+    def set_evdev_status(self, status: str) -> None:
+        if status == "scanning":
+            self.evdev_status_lbl.setText("🔄 Scanning evdev...")
+            self.evdev_status_lbl.setStyleSheet("""
+                color: #f2cc60;
+                font-size: 11px;
+                font-weight: 600;
+                background-color: transparent;
+                border: none;
+                padding: 4px 0px;
+                margin-right: 12px;
+            """)
+            self.evdev_status_lbl.show()
+        elif status == "ready":
+            self.evdev_status_lbl.hide()
+        elif status == "unavailable":
+            self.evdev_status_lbl.setText("⚠️ evdev unavailable")
+            self.evdev_status_lbl.setStyleSheet("""
+                color: #f85149;
+                font-size: 11px;
+                font-weight: 600;
+                background-color: transparent;
+                border: none;
+                padding: 4px 0px;
+                margin-right: 12px;
+            """)
+            self.evdev_status_lbl.show()
+
+    def set_hotkey_btn_recording(self, macro_id, recording):
+        card = self.cards.get(macro_id)
+        if card:
+            if recording:
+                card.hotkey_btn.setText("⌨ Press any key...")
+                card.hotkey_btn.setStyleSheet("""
+                    QPushButton {
+                        background-color: #3d1519;
+                        color: #f85149;
+                        border: 1px solid #da3633;
+                        border-radius: 6px;
+                        padding: 3px 10px;
+                        font-size: 11px;
+                        font-family: "JetBrains Mono", "Fira Code", monospace;
+                    }
+                """)
+            else:
+                card._update_hotkey_text()
+                card.hotkey_btn.setStyleSheet("""
+                    QPushButton {
+                        background-color: #0d1117;
+                        color: #79c0ff;
+                        border: 1px solid #21262d;
+                        border-radius: 6px;
+                        padding: 3px 10px;
+                        font-size: 11px;
+                        font-family: "JetBrains Mono", "Fira Code", monospace;
+                    }
+                    QPushButton:hover {
+                        border-color: #388bfd;
+                        background-color: #1c2128;
+                    }
+                """)
