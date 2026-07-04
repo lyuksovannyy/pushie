@@ -157,6 +157,7 @@ class ActionRow(QFrame):
         self.main_layout.addLayout(btn_layout)
 
         if action:
+            self.on_type_changed(action.type)
             self.type_combo.setCurrentText(action.type)
             self._load_properties(action.properties)
         else:
