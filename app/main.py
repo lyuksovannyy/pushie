@@ -48,6 +48,7 @@ class MainWindow(QMainWindow):
 
         self.editor_page.saved.connect(self.on_macro_saved)
         self.editor_page.cancelled.connect(self.navigate_to_home)
+        self.editor_page.deleted.connect(self.on_macro_deleted)
 
         # Portal triggers
         self.shortcuts_client.session_ready.connect(self.on_portal_session_ready)
@@ -151,6 +152,16 @@ class MainWindow(QMainWindow):
             
         save_macro(macro)
         self.rebind_all_keys()
+        self.navigate_to_home()
+
+    def on_macro_deleted(self, macro_id):
+        # Delete from list and storage
+        self.macros = [m for m in self.macros if m.id != macro_id]
+        delete_macro(macro_id)
+        
+        # Reset and refresh portal binds/GUI cards
+        self.rebind_all_keys()
+        self.home_page.populate_macros(self.macros)
         self.navigate_to_home()
 
     def on_active_toggled(self, macro_id, active):

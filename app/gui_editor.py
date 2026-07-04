@@ -1,7 +1,7 @@
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, 
     QPushButton, QCheckBox, QComboBox, QScrollArea, QFrame,
-    QTabWidget, QFormLayout, QSpinBox, QDoubleSpinBox
+    QTabWidget, QFormLayout, QSpinBox, QDoubleSpinBox, QMessageBox
 )
 from PySide6.QtCore import Qt, Signal
 from app.storage import Macro, ActionSpec
@@ -46,6 +46,21 @@ _BTN_PRIMARY = """
     }
     QPushButton:hover { background-color: #2ea043; }
     QPushButton:pressed { background-color: #1a7f37; }
+"""
+
+_BTN_DANGER = """
+    QPushButton {
+        background-color: #3d1519;
+        color: #f85149;
+        border: 1px solid #da3633;
+        border-radius: 6px;
+        padding: 8px 16px;
+        font-size: 12px;
+        font-weight: bold;
+    }
+    QPushButton:hover {
+        background-color: #5c1d24;
+    }
 """
 
 
@@ -425,6 +440,7 @@ class ActionListWidget(QWidget):
 class MacroEditor(QWidget):
     saved = Signal(object)
     cancelled = Signal()
+    deleted = Signal(str)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -536,6 +552,12 @@ class MacroEditor(QWidget):
         btn_layout = QHBoxLayout()
         btn_layout.setSpacing(12)
 
+        self.delete_btn = QPushButton("Delete Macro", self)
+        self.delete_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.delete_btn.setStyleSheet(_BTN_DANGER)
+        self.delete_btn.clicked.connect(self.on_delete_clicked)
+        btn_layout.addWidget(self.delete_btn)
+
         btn_layout.addStretch()
 
         cancel_btn = QPushButton("Cancel", self)
@@ -552,6 +574,17 @@ class MacroEditor(QWidget):
 
         main_layout.addLayout(btn_layout)
 
+    def on_delete_clicked(self):
+        reply = QMessageBox.question(
+            self, 
+            "Delete Macro", 
+            "Are you sure you want to delete this macro?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No
+        )
+        if reply == QMessageBox.StandardButton.Yes:
+            self.deleted.emit(self.editing_macro_id)
+
     def on_hold_state_changed(self, state):
         is_hold = state == Qt.CheckState.Checked.value
         self.loop_chk.setEnabled(is_hold)
@@ -567,6 +600,7 @@ class MacroEditor(QWidget):
         self.loop_chk.setEnabled(macro.work_only_pressed)
         self.press_list_widget.populate(macro.press_actions)
         self.release_list_widget.populate(macro.release_actions)
+        self.delete_btn.setVisible(True)
 
     def create_empty(self):
         import uuid
@@ -579,6 +613,7 @@ class MacroEditor(QWidget):
         self.loop_chk.setEnabled(True)
         self.press_list_widget.clear_all()
         self.release_list_widget.clear_all()
+        self.delete_btn.setVisible(False)
 
     def save(self):
         name = self.name_in.text().strip()
