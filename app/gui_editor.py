@@ -6,6 +6,61 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, Signal
 from app.storage import Macro, ActionSpec
 
+# Shared input style
+_INPUT = """
+    background-color: #0d1117;
+    color: #e6edf3;
+    border: 1px solid #30363d;
+    border-radius: 6px;
+    padding: 5px 10px;
+    font-size: 12px;
+    selection-background-color: #264f78;
+"""
+_INPUT_FOCUS = "border-color: #388bfd;"
+_LABEL = "color: #8b949e; font-size: 11px; font-weight: 500;"
+
+_BTN_SUBTLE = """
+    QPushButton {
+        background-color: transparent;
+        color: #8b949e;
+        border: 1px solid #30363d;
+        border-radius: 6px;
+        padding: 5px 12px;
+        font-size: 12px;
+    }
+    QPushButton:hover {
+        color: #e6edf3;
+        border-color: #8b949e;
+        background-color: #21262d;
+    }
+"""
+_BTN_PRIMARY = """
+    QPushButton {
+        background-color: #238636;
+        color: #ffffff;
+        border: none;
+        border-radius: 8px;
+        padding: 8px 20px;
+        font-size: 13px;
+        font-weight: 600;
+    }
+    QPushButton:hover { background-color: #2ea043; }
+    QPushButton:pressed { background-color: #1a7f37; }
+"""
+
+
+def _styled_input(widget):
+    widget.setStyleSheet(f"""
+        QLineEdit, QSpinBox, QDoubleSpinBox, QComboBox {{
+            {_INPUT}
+        }}
+        QLineEdit:focus, QSpinBox:focus, QDoubleSpinBox:focus, QComboBox:focus {{
+            {_INPUT_FOCUS}
+        }}
+    """)
+    return widget
+
+
 class ActionRow(QFrame):
     removed = Signal(QWidget)
     moved_up = Signal(QWidget)
@@ -13,76 +68,70 @@ class ActionRow(QFrame):
 
     def __init__(self, action=None, parent=None):
         super().__init__(parent)
-        self.setFrameShape(QFrame.Shape.StyledPanel)
-        self.setFrameShadow(QFrame.Shadow.Raised)
+        self.setFrameShape(QFrame.Shape.NoFrame)
         self.setStyleSheet("""
             ActionRow {
-                background-color: #21262d;
-                border: 1px solid #30363d;
-                border-radius: 6px;
-                margin-top: 4px;
+                background-color: #161b22;
+                border: 1px solid #21262d;
+                border-radius: 8px;
             }
         """)
 
         self.main_layout = QHBoxLayout(self)
-        self.main_layout.setContentsMargins(8, 8, 8, 8)
-        self.main_layout.setSpacing(8)
+        self.main_layout.setContentsMargins(10, 8, 10, 8)
+        self.main_layout.setSpacing(10)
 
-        # 1. Action Type selector
+        # 1. Drag handle hint
+        grip = QLabel("⠿", self)
+        grip.setStyleSheet("color: #30363d; font-size: 16px;")
+        grip.setFixedWidth(16)
+        self.main_layout.addWidget(grip)
+
+        # 2. Action type selector
         self.type_combo = QComboBox(self)
         self.type_combo.addItems([
-            "key_press",
-            "key_release",
-            "key_tap",
-            "mouse_click",
-            "mouse_move",
-            "delay",
-            "mic_toggle",
-            "mic_rules"
+            "key_press", "key_release", "key_tap",
+            "mouse_click", "mouse_move", "delay",
+            "mic_toggle", "mic_rules"
         ])
-        self.type_combo.setStyleSheet("""
-            QComboBox {
-                background-color: #0d1117;
-                color: #c9d1d9;
-                border: 1px solid #30363d;
-                border-radius: 4px;
-                padding: 4px;
-            }
-        """)
+        _styled_input(self.type_combo)
+        self.type_combo.setFixedWidth(120)
         self.type_combo.currentTextChanged.connect(self.on_type_changed)
         self.main_layout.addWidget(self.type_combo)
 
-        # 2. Properties Form Container
+        # 3. Properties container
         self.properties_widget = QWidget(self)
         self.properties_layout = QHBoxLayout(self.properties_widget)
         self.properties_layout.setContentsMargins(0, 0, 0, 0)
-        self.properties_layout.setSpacing(6)
+        self.properties_layout.setSpacing(8)
         self.main_layout.addWidget(self.properties_widget, stretch=1)
 
-        # 3. Actions (Up, Down, Delete buttons)
+        # 4. Row action buttons
         btn_layout = QHBoxLayout()
-        btn_layout.setSpacing(2)
+        btn_layout.setSpacing(4)
 
         self.up_btn = QPushButton("▲", self)
         self.down_btn = QPushButton("▼", self)
         self.del_btn = QPushButton("✕", self)
 
-        for btn, style in [
-            (self.up_btn, "color: #388bfd;"),
-            (self.down_btn, "color: #388bfd;"),
-            (self.del_btn, "color: #f85149;")
+        for btn, color in [
+            (self.up_btn, "#388bfd"),
+            (self.down_btn, "#388bfd"),
+            (self.del_btn, "#f85149"),
         ]:
-            btn.setFixedSize(24, 24)
+            btn.setFixedSize(26, 26)
+            btn.setCursor(Qt.CursorShape.PointingHandCursor)
             btn.setStyleSheet(f"""
                 QPushButton {{
-                    background-color: #30363d;
-                    border: 1px solid #21262d;
-                    border-radius: 4px;
-                    {style}
+                    background-color: #21262d;
+                    border: 1px solid #30363d;
+                    border-radius: 6px;
+                    color: {color};
                     font-size: 10px;
                 }}
                 QPushButton:hover {{
-                    background-color: #444c56;
+                    background-color: #30363d;
+                    border-color: {color};
                 }}
             """)
             btn_layout.addWidget(btn)
@@ -92,7 +141,6 @@ class ActionRow(QFrame):
         self.del_btn.clicked.connect(lambda: self.removed.emit(self))
         self.main_layout.addLayout(btn_layout)
 
-        # Load dynamic properties inputs
         if action:
             self.type_combo.setCurrentText(action.type)
             self._load_properties(action.properties)
@@ -100,43 +148,41 @@ class ActionRow(QFrame):
             self.on_type_changed(self.type_combo.currentText())
 
     def on_type_changed(self, action_type):
-        # Clear properties layout
         while self.properties_layout.count():
             item = self.properties_layout.takeAt(0)
             if item is not None:
                 widget = item.widget()
                 if widget is not None:
                     widget.setParent(None)
-        
-        # Build UI based on selected type
+
         if action_type in ("key_press", "key_release", "key_tap"):
             lbl = QLabel("Key:", self)
-            lbl.setStyleSheet("color: #8b949e; font-size: 11px;")
+            lbl.setStyleSheet(_LABEL)
             self.properties_layout.addWidget(lbl)
-            
+
             key_in = QLineEdit(self)
             key_in.setObjectName("prop_key")
             key_in.setPlaceholderText("e.g. F13 or Escape")
-            key_in.setStyleSheet("background-color: #0d1117; color: #c9d1d9; border: 1px solid #30363d; padding: 4px; border-radius: 4px;")
+            _styled_input(key_in)
             self.properties_layout.addWidget(key_in)
 
         elif action_type == "mouse_click":
-            lbl = QLabel("Btn:", self)
-            lbl.setStyleSheet("color: #8b949e; font-size: 11px;")
+            lbl = QLabel("Button:", self)
+            lbl.setStyleSheet(_LABEL)
             self.properties_layout.addWidget(lbl)
-            
+
             btn_combo = QComboBox(self)
             btn_combo.setObjectName("prop_button")
             btn_combo.addItems(["1 (Left)", "2 (Middle)", "3 (Right)", "4 (Scroll Up)", "5 (Scroll Down)"])
-            btn_combo.setStyleSheet("background-color: #0d1117; color: #c9d1d9; border: 1px solid #30363d; padding: 4px; border-radius: 4px;")
+            _styled_input(btn_combo)
             self.properties_layout.addWidget(btn_combo)
 
         elif action_type == "mouse_move":
             for name, is_float in [("xp", True), ("x", False), ("yp", True), ("y", False)]:
                 lbl = QLabel(f"{name}:", self)
-                lbl.setStyleSheet("color: #8b949e; font-size: 10px;")
+                lbl.setStyleSheet(_LABEL)
                 self.properties_layout.addWidget(lbl)
-                
+
                 if is_float:
                     box = QDoubleSpinBox(self)
                     box.setObjectName(f"prop_{name}")
@@ -146,55 +192,56 @@ class ActionRow(QFrame):
                     box = QSpinBox(self)
                     box.setObjectName(f"prop_{name}")
                     box.setRange(-5000, 5000)
-                box.setStyleSheet("background-color: #0d1117; color: #c9d1d9; border: 1px solid #30363d; border-radius: 4px;")
+                _styled_input(box)
                 self.properties_layout.addWidget(box)
 
         elif action_type == "delay":
             lbl = QLabel("Delay (ms):", self)
-            lbl.setStyleSheet("color: #8b949e; font-size: 11px;")
+            lbl.setStyleSheet(_LABEL)
             self.properties_layout.addWidget(lbl)
-            
+
             spin = QSpinBox(self)
             spin.setObjectName("prop_milliseconds")
             spin.setRange(1, 60000)
             spin.setValue(100)
-            spin.setStyleSheet("background-color: #0d1117; color: #c9d1d9; border: 1px solid #30363d; padding: 4px; border-radius: 4px;")
+            _styled_input(spin)
             self.properties_layout.addWidget(spin)
 
         elif action_type == "mic_toggle":
             chk = QCheckBox("Unmute mic", self)
             chk.setObjectName("prop_unmute")
             chk.setChecked(True)
-            chk.setStyleSheet("color: #c9d1d9;")
+            chk.setStyleSheet("color: #e6edf3; font-size: 12px;")
             self.properties_layout.addWidget(chk)
 
         elif action_type == "mic_rules":
             lbl = QLabel("Rules:", self)
-            lbl.setStyleSheet("color: #8b949e; font-size: 10px;")
+            lbl.setStyleSheet(_LABEL)
             self.properties_layout.addWidget(lbl)
-            
+
             rules_in = QLineEdit(self)
             rules_in.setObjectName("prop_rules")
             rules_in.setPlaceholderText("!vesktop, discord, all")
-            rules_in.setStyleSheet("background-color: #0d1117; color: #c9d1d9; border: 1px solid #30363d; padding: 4px; border-radius: 4px;")
+            _styled_input(rules_in)
             self.properties_layout.addWidget(rules_in)
-            
+
             lbl_vol = QLabel("Vol:", self)
-            lbl_vol.setStyleSheet("color: #8b949e; font-size: 10px;")
+            lbl_vol.setStyleSheet(_LABEL)
             self.properties_layout.addWidget(lbl_vol)
-            
+
             vol_in = QLineEdit(self)
             vol_in.setObjectName("prop_volume")
             vol_in.setText("1.0")
-            vol_in.setStyleSheet("background-color: #0d1117; color: #c9d1d9; border: 1px solid #30363d; padding: 4px; border-radius: 4px;")
+            vol_in.setFixedWidth(50)
+            _styled_input(vol_in)
             self.properties_layout.addWidget(vol_in)
 
     def _load_properties(self, props):
         action_type = self.type_combo.currentText()
         if action_type in ("key_press", "key_release", "key_tap"):
-            in_widget = self.properties_widget.findChild(QLineEdit, "prop_key")
-            if in_widget:
-                in_widget.setText(props.get("key", ""))
+            w = self.properties_widget.findChild(QLineEdit, "prop_key")
+            if w:
+                w.setText(props.get("key", ""))
         elif action_type == "mouse_click":
             combo = self.properties_widget.findChild(QComboBox, "prop_button")
             if combo:
@@ -231,18 +278,18 @@ class ActionRow(QFrame):
     def get_action_spec(self):
         action_type = self.type_combo.currentText()
         props = {}
-        
+
         if action_type in ("key_press", "key_release", "key_tap"):
-            in_widget = self.properties_widget.findChild(QLineEdit, "prop_key")
-            if in_widget:
-                props["key"] = in_widget.text().strip()
-                
+            w = self.properties_widget.findChild(QLineEdit, "prop_key")
+            if w:
+                props["key"] = w.text().strip()
+
         elif action_type == "mouse_click":
             combo = self.properties_widget.findChild(QComboBox, "prop_button")
             if combo:
                 text = combo.currentText()
                 props["button"] = int(text.split()[0])
-                
+
         elif action_type == "mouse_move":
             for name in ("xp", "yp"):
                 box = self.properties_widget.findChild(QDoubleSpinBox, f"prop_{name}")
@@ -252,17 +299,17 @@ class ActionRow(QFrame):
                 box = self.properties_widget.findChild(QSpinBox, f"prop_{name}")
                 if box:
                     props[name] = box.value()
-                        
+
         elif action_type == "delay":
             spin = self.properties_widget.findChild(QSpinBox, "prop_milliseconds")
             if spin:
                 props["milliseconds"] = spin.value()
-                
+
         elif action_type == "mic_toggle":
             chk = self.properties_widget.findChild(QCheckBox, "prop_unmute")
             if chk:
                 props["unmute"] = chk.isChecked()
-                
+
         elif action_type == "mic_rules":
             rules_in = self.properties_widget.findChild(QLineEdit, "prop_rules")
             if rules_in:
@@ -271,62 +318,63 @@ class ActionRow(QFrame):
             vol_in = self.properties_widget.findChild(QLineEdit, "prop_volume")
             if vol_in:
                 props["volume"] = vol_in.text().strip()
-                
+
         return ActionSpec(action_type, props)
+
 
 class ActionListWidget(QWidget):
     def __init__(self, title, parent=None):
         super().__init__(parent)
-        
-        # Main vertical layout
+
         self.main_layout = QVBoxLayout(self)
         self.main_layout.setContentsMargins(0, 0, 0, 0)
-        self.main_layout.setSpacing(4)
-        
-        # Top panel: Title and Add Action Button
+        self.main_layout.setSpacing(6)
+
+        # Header
         header = QHBoxLayout()
+        header.setContentsMargins(0, 0, 0, 0)
+
         lbl = QLabel(title, self)
-        lbl.setStyleSheet("font-weight: bold; color: #ffffff;")
-        header.addWidget(lbl, alignment=Qt.AlignmentFlag.AlignLeft)
-        
+        lbl.setStyleSheet("font-weight: 600; font-size: 13px; color: #e6edf3;")
+        header.addWidget(lbl)
+
+        header.addStretch()
+
         add_btn = QPushButton("+ Add Action", self)
-        add_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #21262d;
-                color: #58a6ff;
-                border: 1px solid #30363d;
-                border-radius: 4px;
-                padding: 4px 8px;
-                font-size: 11px;
-            }
-            QPushButton:hover {
-                background-color: #30363d;
-            }
-        """)
+        add_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        add_btn.setStyleSheet(_BTN_SUBTLE)
         add_btn.clicked.connect(self.add_empty_row)
-        header.addWidget(add_btn, alignment=Qt.AlignmentFlag.AlignRight)
+        header.addWidget(add_btn)
         self.main_layout.addLayout(header)
 
-        # Scroll Area for rows
+        # Scroll area
         self.scroll_area = QScrollArea(self)
         self.scroll_area.setWidgetResizable(True)
         self.scroll_area.setFrameShape(QFrame.Shape.NoFrame)
-        self.scroll_area.setStyleSheet("background-color: #0d1117;")
-        
+        self.scroll_area.setStyleSheet("""
+            QScrollArea { background-color: transparent; border: none; }
+            QScrollBar:vertical {
+                background-color: #161b22; width: 8px; border-radius: 4px;
+            }
+            QScrollBar::handle:vertical {
+                background-color: #30363d; min-height: 24px; border-radius: 4px;
+            }
+            QScrollBar::handle:vertical:hover { background-color: #484f58; }
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }
+        """)
+
         self.scroll_content = QWidget(self)
-        self.scroll_content.setStyleSheet("background-color: #0d1117;")
+        self.scroll_content.setStyleSheet("background-color: transparent;")
         self.rows_layout = QVBoxLayout(self.scroll_content)
         self.rows_layout.setContentsMargins(0, 0, 0, 0)
-        self.rows_layout.setSpacing(4)
+        self.rows_layout.setSpacing(6)
         self.rows_layout.addStretch()
-        
+
         self.scroll_area.setWidget(self.scroll_content)
         self.main_layout.addWidget(self.scroll_area)
 
     def populate(self, actions):
-        # Clear existing
         self.clear_all()
-        # Add new
         for act in actions:
             self.add_row(act)
 
@@ -343,8 +391,6 @@ class ActionListWidget(QWidget):
         row.removed.connect(self.remove_row)
         row.moved_up.connect(self.move_row_up)
         row.moved_down.connect(self.move_row_down)
-        
-        # Insert before the stretch item
         self.rows_layout.insertWidget(self.rows_layout.count() - 1, row)
 
     def add_empty_row(self):
@@ -361,7 +407,6 @@ class ActionListWidget(QWidget):
 
     def move_row_down(self, row_widget):
         idx = self.rows_layout.indexOf(row_widget)
-        # Note: the last item in lay is the stretch spacer
         if idx < self.rows_layout.count() - 2:
             self.rows_layout.removeWidget(row_widget)
             self.rows_layout.insertWidget(idx + 1, row_widget)
@@ -376,8 +421,9 @@ class ActionListWidget(QWidget):
                     actions.append(w.get_action_spec())
         return actions
 
+
 class MacroEditor(QWidget):
-    saved = Signal(object) # Macro
+    saved = Signal(object)
     cancelled = Signal()
 
     def __init__(self, parent=None):
@@ -385,128 +431,131 @@ class MacroEditor(QWidget):
         self.setStyleSheet("""
             QWidget {
                 background-color: #0d1117;
-                color: #c9d1d9;
+                color: #e6edf3;
             }
         """)
 
-        # Keep reference to macro being edited (None if creating)
         self.editing_macro_id = None
 
         main_layout = QVBoxLayout(self)
-        main_layout.setContentsMargins(16, 16, 16, 16)
-        main_layout.setSpacing(12)
+        main_layout.setContentsMargins(20, 20, 20, 20)
+        main_layout.setSpacing(14)
 
         # Title
         self.title_label = QLabel("Create Macro", self)
-        self.title_label.setStyleSheet("font-size: 16px; font-weight: bold; color: #ffffff;")
+        self.title_label.setStyleSheet("font-size: 18px; font-weight: 700; color: #e6edf3;")
         main_layout.addWidget(self.title_label)
 
-        # Form Layout details
+        # Separator
+        sep = QFrame(self)
+        sep.setFrameShape(QFrame.Shape.HLine)
+        sep.setStyleSheet("color: #21262d;")
+        sep.setFixedHeight(1)
+        main_layout.addWidget(sep)
+
+        # Form
         form = QFormLayout()
-        form.setSpacing(6)
-        
+        form.setSpacing(10)
+        form.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
+
+        for lbl_widget in []:
+            pass  # labels styled via form row
+
         self.name_in = QLineEdit(self)
         self.name_in.setPlaceholderText("Macro Name")
-        self.name_in.setStyleSheet("background-color: #0d1117; color: #c9d1d9; border: 1px solid #30363d; border-radius: 6px; padding: 6px 12px; font-size: 12px;")
-        form.addRow("Name:", self.name_in)
+        _styled_input(self.name_in)
+        name_lbl = QLabel("Name:", self)
+        name_lbl.setStyleSheet(_LABEL)
+        form.addRow(name_lbl, self.name_in)
 
         self.desc_in = QLineEdit(self)
         self.desc_in.setPlaceholderText("Optional description")
-        self.desc_in.setStyleSheet("background-color: #0d1117; color: #c9d1d9; border: 1px solid #30363d; border-radius: 6px; padding: 6px 12px; font-size: 12px;")
-        form.addRow("Description:", self.desc_in)
+        _styled_input(self.desc_in)
+        desc_lbl = QLabel("Description:", self)
+        desc_lbl.setStyleSheet(_LABEL)
+        form.addRow(desc_lbl, self.desc_in)
 
-        # Checkboxes/modes
+        # Mode checkboxes
         mode_layout = QHBoxLayout()
-        self.hold_chk = QCheckBox("Work Only When Pressed (Hold Mode)", self)
+        mode_layout.setSpacing(16)
+
+        self.hold_chk = QCheckBox("Hold Mode (work only when pressed)", self)
         self.hold_chk.setChecked(True)
-        self.hold_chk.setStyleSheet("color: #c9d1d9;")
+        self.hold_chk.setStyleSheet("color: #e6edf3; font-size: 12px;")
         self.hold_chk.stateChanged.connect(self.on_hold_state_changed)
         mode_layout.addWidget(self.hold_chk)
 
         self.loop_chk = QCheckBox("Loop while held", self)
-        self.loop_chk.setChecked(False)
-        self.loop_chk.setStyleSheet("color: #c9d1d9;")
+        self.loop_chk.setStyleSheet("color: #e6edf3; font-size: 12px;")
         mode_layout.addWidget(self.loop_chk)
-        form.addRow("Settings:", mode_layout)
+
+        mode_lbl = QLabel("Settings:", self)
+        mode_lbl.setStyleSheet(_LABEL)
+        form.addRow(mode_lbl, mode_layout)
         main_layout.addLayout(form)
 
-        # Tabs for Actions
+        # Tabs
         self.tabs = QTabWidget(self)
         self.tabs.setStyleSheet("""
             QTabWidget::pane {
-                border: 1px solid #30363d;
+                border: 1px solid #21262d;
                 background-color: #161b22;
-                border-radius: 6px;
+                border-radius: 8px;
+                padding: 8px;
             }
             QTabBar::tab {
-                background-color: #21262d;
-                border: 1px solid #30363d;
-                border-bottom-color: none;
-                border-top-left-radius: 4px;
-                border-top-right-radius: 4px;
-                padding: 6px 12px;
+                background-color: #0d1117;
+                border: 1px solid #21262d;
+                border-bottom: none;
+                border-top-left-radius: 6px;
+                border-top-right-radius: 6px;
+                padding: 8px 16px;
                 color: #8b949e;
+                font-size: 12px;
             }
             QTabBar::tab:selected {
                 background-color: #161b22;
-                color: #ffffff;
-                border-bottom-color: #161b22;
+                color: #e6edf3;
+                font-weight: 600;
+            }
+            QTabBar::tab:hover:!selected {
+                color: #c9d1d9;
+                background-color: #1c2128;
             }
         """)
 
-        # Tab 1: Press Actions
         self.press_list_widget = ActionListWidget("On Press (Hotkey Activated)", self)
-        self.tabs.addTab(self.press_list_widget, "Press actions")
+        self.tabs.addTab(self.press_list_widget, "Press Actions")
 
-        # Tab 2: Release Actions
         self.release_list_widget = ActionListWidget("On Release (Hotkey Deactivated)", self)
-        self.tabs.addTab(self.release_list_widget, "Release actions (Hold Mode only)")
+        self.tabs.addTab(self.release_list_widget, "Release Actions")
 
         main_layout.addWidget(self.tabs, stretch=1)
 
-        # Bottom row: Save and Cancel
+        # Bottom buttons
         btn_layout = QHBoxLayout()
         btn_layout.setSpacing(12)
 
-        save_btn = QPushButton("Save", self)
-        save_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #238636;
-                color: #ffffff;
-                border: none;
-                border-radius: 6px;
-                padding: 8px 16px;
-                font-weight: bold;
-            }
-            QPushButton:hover {
-                background-color: #2ea043;
-            }
-        """)
-        save_btn.clicked.connect(self.save)
-        btn_layout.addWidget(save_btn)
+        btn_layout.addStretch()
 
         cancel_btn = QPushButton("Cancel", self)
-        cancel_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #21262d;
-                color: #c9d1d9;
-                border: 1px solid #30363d;
-                border-radius: 6px;
-                padding: 8px 16px;
-            }
-            QPushButton:hover {
-                background-color: #30363d;
-            }
-        """)
+        cancel_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        cancel_btn.setStyleSheet(_BTN_SUBTLE)
         cancel_btn.clicked.connect(self.cancelled.emit)
         btn_layout.addWidget(cancel_btn)
+
+        save_btn = QPushButton("Save Macro", self)
+        save_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        save_btn.setStyleSheet(_BTN_PRIMARY)
+        save_btn.clicked.connect(self.save)
+        btn_layout.addWidget(save_btn)
 
         main_layout.addLayout(btn_layout)
 
     def on_hold_state_changed(self, state):
         is_hold = state == Qt.CheckState.Checked.value
         self.loop_chk.setEnabled(is_hold)
-        self.tabs.setTabEnabled(1, is_hold) # Toggle "Release actions" tab
+        self.tabs.setTabEnabled(1, is_hold)
 
     def load_macro(self, macro):
         self.editing_macro_id = macro.id
@@ -535,15 +584,15 @@ class MacroEditor(QWidget):
         name = self.name_in.text().strip()
         if not name:
             name = "Unnamed Macro"
-        
+
         macro = Macro(
             self.editing_macro_id,
             name,
             self.desc_in.text().strip(),
-            "", # hotkey gets registered later
+            "",
             self.hold_chk.isChecked(),
             self.loop_chk.isChecked(),
-            True, # active by default
+            True,
             self.press_list_widget.get_actions(),
             self.release_list_widget.get_actions()
         )

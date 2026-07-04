@@ -1,8 +1,40 @@
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QLabel, 
-    QPushButton, QScrollArea, QFrame, QMenu
+    QPushButton, QScrollArea, QFrame
 )
 from PySide6.QtCore import Qt, Signal
+
+THEME = """
+    * {
+        font-family: "Segoe UI", "SF Pro Display", system-ui, sans-serif;
+    }
+    QWidget#home_root {
+        background-color: #0d1117;
+    }
+    QScrollArea {
+        background-color: transparent;
+        border: none;
+    }
+    QScrollArea > QWidget > QWidget {
+        background-color: transparent;
+    }
+    QScrollBar:vertical {
+        background-color: #161b22;
+        width: 8px;
+        border-radius: 4px;
+    }
+    QScrollBar::handle:vertical {
+        background-color: #30363d;
+        min-height: 24px;
+        border-radius: 4px;
+    }
+    QScrollBar::handle:vertical:hover {
+        background-color: #484f58;
+    }
+    QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
+        height: 0;
+    }
+"""
 
 class HotkeyButton(QPushButton):
     rightClicked = Signal()
@@ -13,143 +45,154 @@ class HotkeyButton(QPushButton):
         else:
             super().mousePressEvent(event)
 
+
 class MacroWidget(QFrame):
-    edit_requested = Signal(str)      # macro_id
-    hotkey_requested = Signal(str)    # macro_id
-    toggle_mode_changed = Signal(str) # macro_id
-    active_toggled = Signal(str, bool) # macro_id, active
+    edit_requested = Signal(str)
+    hotkey_requested = Signal(str)
+    toggle_mode_changed = Signal(str)
+    active_toggled = Signal(str, bool)
 
     def __init__(self, macro, parent=None):
         super().__init__(parent)
         self.macro = macro
-        self.setFrameShape(QFrame.Shape.StyledPanel)
-        self.setFrameShadow(QFrame.Shadow.Raised)
-        self.setProperty("class", "macro-card")
+        self.setFrameShape(QFrame.Shape.NoFrame)
+        self.setMinimumHeight(120)
         self.setStyleSheet("""
-            QFrame.macro-card {
-                background-color: #1e1e24;
-                border: 1px solid #33333c;
-                border-radius: 8px;
-                padding: 12px;
+            MacroWidget {
+                background-color: #161b22;
+                border: 1px solid #21262d;
+                border-radius: 10px;
+            }
+            MacroWidget:hover {
+                border-color: #388bfd;
             }
         """)
 
-        # Main Layout
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(12, 12, 12, 12)
-        layout.setSpacing(8)
+        layout.setContentsMargins(16, 14, 16, 14)
+        layout.setSpacing(6)
 
-        # Header Row: Name & Hotkey Button
-        header_layout = QHBoxLayout()
-        header_layout.setContentsMargins(0, 0, 0, 0)
-        
+        # -- Header: Name + Hotkey --
+        header = QHBoxLayout()
+        header.setContentsMargins(0, 0, 0, 0)
+        header.setSpacing(10)
+
         self.name_label = QLabel(macro.name, self)
-        self.name_label.setStyleSheet("font-weight: bold; font-size: 14px; color: #ffffff;")
-        header_layout.addWidget(self.name_label, alignment=Qt.AlignmentFlag.AlignLeft)
+        self.name_label.setStyleSheet("font-size: 14px; font-weight: 600; color: #e6edf3;")
+        header.addWidget(self.name_label)
 
-        # Hotkey Button with indicator
+        header.addStretch()
+
         self.hotkey_btn = HotkeyButton(self)
-        self.update_hotkey_button_text()
+        self._update_hotkey_text()
         self.hotkey_btn.setStyleSheet("""
             QPushButton {
-                background-color: #2b2b35;
-                color: #58a6ff;
-                border: 1px solid #444c56;
-                border-radius: 4px;
-                padding: 4px 8px;
+                background-color: #0d1117;
+                color: #79c0ff;
+                border: 1px solid #21262d;
+                border-radius: 6px;
+                padding: 3px 10px;
                 font-size: 11px;
-                font-family: monospace;
+                font-family: "JetBrains Mono", "Fira Code", monospace;
             }
             QPushButton:hover {
-                background-color: #383846;
-                border-color: #58a6ff;
+                border-color: #388bfd;
+                background-color: #1c2128;
             }
         """)
         self.hotkey_btn.clicked.connect(lambda: self.hotkey_requested.emit(self.macro.id))
         self.hotkey_btn.rightClicked.connect(lambda: self.toggle_mode_changed.emit(self.macro.id))
-        header_layout.addWidget(self.hotkey_btn, alignment=Qt.AlignmentFlag.AlignRight)
-        layout.addLayout(header_layout)
+        header.addWidget(self.hotkey_btn)
+        layout.addLayout(header)
 
-        # Description
-        self.desc_label = QLabel(macro.description or "No description", self)
+        # -- Description --
+        desc_text = macro.description or "No description"
+        self.desc_label = QLabel(desc_text, self)
         self.desc_label.setWordWrap(True)
-        self.desc_label.setStyleSheet("color: #8b949e; font-size: 11px;")
+        self.desc_label.setStyleSheet("color: #8b949e; font-size: 12px; padding-top: 2px;")
         layout.addWidget(self.desc_label)
 
-        # Spacer/flexible
         layout.addStretch()
 
-        # Footer Row: Edit Button and Active Toggle
-        footer_layout = QHBoxLayout()
-        footer_layout.setContentsMargins(0, 0, 0, 0)
+        # -- Footer: Edit + Active toggle --
+        footer = QHBoxLayout()
+        footer.setContentsMargins(0, 0, 0, 0)
+        footer.setSpacing(8)
 
-        # Edit button (left)
-        edit_btn = QPushButton("Edit", self)
+        edit_btn = QPushButton("✎ Edit", self)
+        edit_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         edit_btn.setStyleSheet("""
             QPushButton {
-                background-color: #21262d;
-                color: #c9d1d9;
+                background-color: transparent;
+                color: #8b949e;
                 border: 1px solid #30363d;
-                border-radius: 4px;
-                padding: 4px 10px;
+                border-radius: 6px;
+                padding: 4px 12px;
                 font-size: 11px;
             }
             QPushButton:hover {
-                background-color: #30363d;
+                color: #e6edf3;
+                border-color: #8b949e;
+                background-color: #21262d;
             }
         """)
         edit_btn.clicked.connect(lambda: self.edit_requested.emit(self.macro.id))
-        footer_layout.addWidget(edit_btn, alignment=Qt.AlignmentFlag.AlignLeft)
+        footer.addWidget(edit_btn)
 
-        # Active Toggle state button/switch (right)
+        footer.addStretch()
+
         self.active_btn = QPushButton(self)
-        self.update_active_button_state()
-        self.active_btn.clicked.connect(self.on_active_clicked)
-        footer_layout.addWidget(self.active_btn, alignment=Qt.AlignmentFlag.AlignRight)
-        layout.addLayout(footer_layout)
+        self.active_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._update_active_state()
+        self.active_btn.clicked.connect(self._on_active_clicked)
+        footer.addWidget(self.active_btn)
+        layout.addLayout(footer)
 
-    def update_hotkey_button_text(self):
-        hotkey_prefix = "[Hold]" if self.macro.work_only_pressed else "[Toggle]"
-        hotkey_text = self.macro.hotkey or "Bind Hotkey"
-        self.hotkey_btn.setText(f"{hotkey_prefix} {hotkey_text}")
+    def _update_hotkey_text(self):
+        mode = "Hold" if self.macro.work_only_pressed else "Toggle"
+        key = self.macro.hotkey or "Click to bind"
+        self.hotkey_btn.setText(f"⌨ {key}  [{mode}]")
 
-    def update_active_button_state(self):
+    def _update_active_state(self):
         if self.macro.active:
-            self.active_btn.setText("Active")
+            self.active_btn.setText("● Active")
             self.active_btn.setStyleSheet("""
                 QPushButton {
-                    background-color: #238636;
-                    color: #ffffff;
-                    border: none;
-                    border-radius: 4px;
-                    padding: 4px 10px;
+                    background-color: #0d4429;
+                    color: #3fb950;
+                    border: 1px solid #238636;
+                    border-radius: 6px;
+                    padding: 4px 12px;
                     font-size: 11px;
+                    font-weight: 600;
                 }
                 QPushButton:hover {
-                    background-color: #2ea043;
+                    background-color: #1a5c37;
                 }
             """)
         else:
-            self.active_btn.setText("Disabled")
+            self.active_btn.setText("○ Disabled")
             self.active_btn.setStyleSheet("""
                 QPushButton {
-                    background-color: #da3637;
-                    color: #ffffff;
-                    border: none;
-                    border-radius: 4px;
-                    padding: 4px 10px;
+                    background-color: #3d1519;
+                    color: #f85149;
+                    border: 1px solid #da3633;
+                    border-radius: 6px;
+                    padding: 4px 12px;
                     font-size: 11px;
+                    font-weight: 600;
                 }
                 QPushButton:hover {
-                    background-color: #f85149;
+                    background-color: #5c1d24;
                 }
             """)
 
-    def on_active_clicked(self):
+    def _on_active_clicked(self):
         new_state = not self.macro.active
         self.macro.active = new_state
-        self.update_active_button_state()
+        self._update_active_state()
         self.active_toggled.emit(self.macro.id, new_state)
+
 
 class HomePage(QWidget):
     create_requested = Signal()
@@ -160,77 +203,78 @@ class HomePage(QWidget):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setStyleSheet("""
-            QWidget {
-                background-color: #0d1117;
-                color: #c9d1d9;
-            }
-        """)
+        self.setObjectName("home_root")
+        self.setStyleSheet(THEME)
 
-        # Main Layout
-        self.main_layout = QVBoxLayout(self)
-        self.main_layout.setContentsMargins(16, 16, 16, 16)
-        self.main_layout.setSpacing(12)
+        main_layout = QVBoxLayout(self)
+        main_layout.setContentsMargins(20, 20, 20, 20)
+        main_layout.setSpacing(16)
 
-        # Top Bar: Title & Create Macro Button
+        # -- Top bar --
         top_bar = QHBoxLayout()
-        title_label = QLabel("Pushie Macros", self)
-        title_label.setStyleSheet("font-size: 18px; font-weight: bold; color: #ffffff;")
-        top_bar.addWidget(title_label, alignment=Qt.AlignmentFlag.AlignLeft)
+        top_bar.setContentsMargins(0, 0, 0, 0)
 
-        create_btn = QPushButton("Create macro", self)
+        title = QLabel("Pushie", self)
+        title.setStyleSheet("font-size: 20px; font-weight: 700; color: #e6edf3;")
+        top_bar.addWidget(title)
+
+        top_bar.addStretch()
+
+        create_btn = QPushButton("+ Create Macro", self)
+        create_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         create_btn.setStyleSheet("""
             QPushButton {
                 background-color: #238636;
                 color: #ffffff;
                 border: none;
-                border-radius: 6px;
-                padding: 6px 12px;
-                font-size: 12px;
-                font-weight: bold;
+                border-radius: 8px;
+                padding: 8px 18px;
+                font-size: 13px;
+                font-weight: 600;
             }
             QPushButton:hover {
                 background-color: #2ea043;
             }
+            QPushButton:pressed {
+                background-color: #1a7f37;
+            }
         """)
         create_btn.clicked.connect(self.create_requested.emit)
-        top_bar.addWidget(create_btn, alignment=Qt.AlignmentFlag.AlignRight)
-        self.main_layout.addLayout(top_bar)
+        top_bar.addWidget(create_btn)
+        main_layout.addLayout(top_bar)
 
-        # Scroll Area for macros (flexible grid/list representation)
+        # -- Separator --
+        sep = QFrame(self)
+        sep.setFrameShape(QFrame.Shape.HLine)
+        sep.setStyleSheet("color: #21262d;")
+        sep.setFixedHeight(1)
+        main_layout.addWidget(sep)
+
+        # -- Scroll area for macro grid --
         self.scroll_area = QScrollArea(self)
         self.scroll_area.setWidgetResizable(True)
         self.scroll_area.setFrameShape(QFrame.Shape.NoFrame)
-        self.scroll_area.setStyleSheet("""
-            QScrollArea {
-                background-color: #0d1117;
-            }
-        """)
 
         self.scroll_widget = QWidget(self)
-        self.scroll_widget.setStyleSheet("background-color: #0d1117;")
         self.grid_layout = QGridLayout(self.scroll_widget)
-        self.grid_layout.setSpacing(12)
-        self.grid_layout.setContentsMargins(0, 0, 0, 0)
-        
-        self.scroll_area.setWidget(self.scroll_widget)
-        self.main_layout.addWidget(self.scroll_area)
+        self.grid_layout.setSpacing(14)
+        self.grid_layout.setContentsMargins(0, 0, 8, 0)
 
-        # Store of active card widgets
-        self.cards = {}
+        self.scroll_area.setWidget(self.scroll_widget)
+        main_layout.addWidget(self.scroll_area)
+
+        self.cards: dict[str, MacroWidget] = {}
 
     def populate_macros(self, macros):
-        # 1. Clear existing layout items
-        for i in reversed(range(self.grid_layout.count())): 
+        for i in reversed(range(self.grid_layout.count())):
             item = self.grid_layout.itemAt(i)
             if item is not None:
                 widget = item.widget()
                 if widget is not None:
                     widget.setParent(None)
-        
+
         self.cards.clear()
 
-        # 2. Add macro cards
         cols = 2
         for idx, macro in enumerate(macros):
             row = idx // cols
@@ -240,10 +284,10 @@ class HomePage(QWidget):
             card.hotkey_requested.connect(self.hotkey_requested.emit)
             card.toggle_mode_changed.connect(self.toggle_mode_changed.emit)
             card.active_toggled.connect(self.active_toggled.emit)
-            
+
             self.grid_layout.addWidget(card, row, col)
             self.cards[macro.id] = card
-            
-        # Push all to the top
-        row_count = (len(macros) + 1) // cols
+
+        # Push cards to top
+        row_count = (len(macros) + cols - 1) // cols
         self.grid_layout.setRowStretch(max(1, row_count), 1)
