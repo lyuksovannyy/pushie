@@ -95,6 +95,7 @@ class MacroEngine:
     def __init__(self) -> None:
         self._running_actions: dict[str, tuple[threading.Thread, threading.Event]] = {}  # macro_id -> (thread, stop_event)
         self._toggled_states: dict[str, bool] = {}   # macro_id -> bool
+        self._pressed_states: dict[str, bool] = {}   # macro_id -> bool
         self._active_macros: dict[str, Macro] = {}   # macro_id -> Macro
         self.lock = threading.Lock()
         self._held_keys: dict[str, set[str]] = {}
@@ -118,8 +119,9 @@ class MacroEngine:
         
         if macro.work_only_pressed:
             with self.lock:
-                if macro.id in self._running_actions:
+                if self._pressed_states.get(macro.id, False):
                     return
+                self._pressed_states[macro.id] = True
         
         logger.info(f"Activating macro: {macro.name} (ID: {macro.id})")
         with self.lock:
@@ -145,6 +147,10 @@ class MacroEngine:
             return
         
         if macro.work_only_pressed:
+            with self.lock:
+                if not self._pressed_states.get(macro.id, False):
+                    return
+                self._pressed_states[macro.id] = False
             logger.info(f"Deactivating macro: {macro.name} (ID: {macro.id})")
             with self.lock:
                 self._active_macros[macro.id] = macro
@@ -264,6 +270,7 @@ class MacroEngine:
                 self._stop_macro_thread_locked(mid)
             
             self._toggled_states.clear()
+            self._pressed_states.clear()
             
             # For each macro that was running, run its release sequence if available
             threads_to_join = []

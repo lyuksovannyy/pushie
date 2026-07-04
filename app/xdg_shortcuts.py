@@ -91,15 +91,24 @@ class XDGShortcutsClient(QObject):
         if response_code == 0 and "session_handle" in results:
             self.session_path = str(results["session_handle"])
             logger.debug(f"XDG shortcuts session created successfully: {self.session_path}")
-            self.session_ready.emit(self.session_path)
+            try:
+                self.session_ready.emit(self.session_path)
+            except RuntimeError:
+                pass
         else:
             logger.error(f"CreateSession failed with response code: {response_code}")
-            self.error_occurred.emit(f"CreateSession failed with response code: {response_code}")
+            try:
+                self.error_occurred.emit(f"CreateSession failed with response code: {response_code}")
+            except RuntimeError:
+                pass
 
     def bind_shortcuts(self, shortcuts_list: Sequence[ShortcutBindSpec]) -> None:
         if not self.shortcuts_iface or not self.session_path:
             logger.error("Session not established for binding")
-            self.error_occurred.emit("Session not established for binding")
+            try:
+                self.error_occurred.emit("Session not established for binding")
+            except RuntimeError:
+                pass
             return
 
         logger.debug("Binding shortcuts dynamically on XDG portal session...")
@@ -126,7 +135,10 @@ class XDGShortcutsClient(QObject):
             )
         except Exception as e:
             logger.error(f"Failed to call BindShortcuts: {e}")
-            self.error_occurred.emit(f"Failed to call BindShortcuts: {e}")
+            try:
+                self.error_occurred.emit(f"Failed to call BindShortcuts: {e}")
+            except RuntimeError:
+                pass
 
     def _on_bind_response(self, response_code: int, results: dict[str, Any]) -> None:
         if response_code == 0:
@@ -138,16 +150,28 @@ class XDGShortcutsClient(QObject):
                     "id": str(sid),
                     "trigger": trigger_desc
                 })
-            self.shortcuts_configured.emit(shortcuts_bound)
+            try:
+                self.shortcuts_configured.emit(shortcuts_bound)
+            except RuntimeError:
+                pass
         elif response_code == 1:
-            self.shortcuts_configured.emit([])
+            try:
+                self.shortcuts_configured.emit([])
+            except RuntimeError:
+                pass
         else:
-            self.error_occurred.emit(f"BindShortcuts failed with code: {response_code}")
+            try:
+                self.error_occurred.emit(f"BindShortcuts failed with code: {response_code}")
+            except RuntimeError:
+                pass
 
     def configure_shortcuts(self) -> None:
         if not self.shortcuts_iface or not self.session_path:
             logger.error("Session not established for configuration")
-            self.error_occurred.emit("Session not established for configuration")
+            try:
+                self.error_occurred.emit("Session not established for configuration")
+            except RuntimeError:
+                pass
             return
         logger.debug("Opening portal configuration interface...")
         try:
@@ -158,7 +182,10 @@ class XDGShortcutsClient(QObject):
             )
         except Exception as e:
             logger.error(f"Failed to call ConfigureShortcuts: {e}")
-            self.error_occurred.emit(f"Failed to call ConfigureShortcuts: {e}")
+            try:
+                self.error_occurred.emit(f"Failed to call ConfigureShortcuts: {e}")
+            except RuntimeError:
+                pass
 
     def _on_shortcuts_changed(self, session: object, shortcuts: list) -> None:
         if self.session_path and str(session) == self.session_path:
@@ -170,14 +197,23 @@ class XDGShortcutsClient(QObject):
                     "id": str(sid),
                     "trigger": trigger_desc
                 })
-            self.shortcuts_configured.emit(shortcuts_bound)
+            try:
+                self.shortcuts_configured.emit(shortcuts_bound)
+            except RuntimeError:
+                pass
 
     def _on_activated(self, session: object, shortcut_id: str, timestamp: int, options: dict[str, Any]) -> None:
         if self.session_path and str(session) == self.session_path:
             logger.debug(f"DBus Portal signal: Activated shortcut ID: {shortcut_id}")
-            self.shortcut_activated.emit(str(shortcut_id))
+            try:
+                self.shortcut_activated.emit(str(shortcut_id))
+            except RuntimeError:
+                pass
 
     def _on_deactivated(self, session: object, shortcut_id: str, timestamp: int, options: dict[str, Any]) -> None:
         if self.session_path and str(session) == self.session_path:
             logger.debug(f"DBus Portal signal: Deactivated shortcut ID: {shortcut_id}")
-            self.shortcut_deactivated.emit(str(shortcut_id))
+            try:
+                self.shortcut_deactivated.emit(str(shortcut_id))
+            except RuntimeError:
+                pass
