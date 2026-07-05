@@ -1,5 +1,7 @@
 # Pushie
 
+![menu.png](images/menu.png)
+
 Pushie is a modern PySide6-based macro builder. It couples push-to-talk microphone management with keyboard/mouse automation using the native **XDG Global Shortcuts portal** over DBus.
 
 ## Features
