@@ -109,7 +109,7 @@ class ActionRow(QFrame):
         self.type_combo = QComboBox(self)
         self.type_combo.addItems([
             "key_press", "key_release", "key_tap",
-            "mouse_click", "mouse_move", "delay",
+            "mouse_press", "mouse_release", "mouse_click", "mouse_move", "delay",
             "mic_toggle", "mic_rules"
         ])
         _styled_input(self.type_combo)
@@ -236,14 +236,17 @@ class ActionRow(QFrame):
             _styled_input(key_in)
             self.properties_layout.addWidget(key_in)
 
-        elif action_type == "mouse_click":
+        elif action_type in ("mouse_press", "mouse_release", "mouse_click"):
             lbl = QLabel("Button:", self)
             lbl.setStyleSheet(_LABEL)
             self.properties_layout.addWidget(lbl)
 
             btn_combo = QComboBox(self)
             btn_combo.setObjectName("prop_button")
-            btn_combo.addItems(["1 (Left)", "2 (Middle)", "3 (Right)", "4 (Scroll Up)", "5 (Scroll Down)"])
+            btn_combo.addItems([
+                "1 (Left)", "2 (Middle)", "3 (Right)",
+                "8 (Side Back)", "9 (Side Forward)"
+            ])
             _styled_input(btn_combo)
             self.properties_layout.addWidget(btn_combo)
 
@@ -312,7 +315,7 @@ class ActionRow(QFrame):
             w = self.properties_widget.findChild(QLineEdit, "prop_key")
             if w:
                 w.setText(props.get("key", ""))
-        elif action_type == "mouse_click":
+        elif action_type in ("mouse_press", "mouse_release", "mouse_click"):
             combo = self.properties_widget.findChild(QComboBox, "prop_button")
             if combo:
                 val = props.get("button", 1)
@@ -354,7 +357,7 @@ class ActionRow(QFrame):
             if w:
                 props["key"] = w.text().strip()
 
-        elif action_type == "mouse_click":
+        elif action_type in ("mouse_press", "mouse_release", "mouse_click"):
             combo = self.properties_widget.findChild(QComboBox, "prop_button")
             if combo:
                 text = combo.currentText()
@@ -800,6 +803,7 @@ class MacroEditor(QWidget):
         self._evdev_hotkey = getattr(macro, "evdev_hotkey", "")
         self._evdev_pass_through = getattr(macro, "evdev_pass_through", False)
         self.bind_method = getattr(macro, "bind_method", "xdg")
+        self._target_apps = getattr(macro, "target_apps", [])
 
         self.press_list_widget.populate(macro.press_actions)
         self.release_list_widget.populate(macro.release_actions)
@@ -816,6 +820,7 @@ class MacroEditor(QWidget):
         self._evdev_hotkey = ""
         self._evdev_pass_through = False
         self.bind_method = "xdg"
+        self._target_apps = []
         
         self.hold_chk.setChecked(True)
         self.loop_chk.setChecked(False)
@@ -844,6 +849,7 @@ class MacroEditor(QWidget):
             bind_method=method,
             evdev_pass_through=getattr(self, "_evdev_pass_through", False),
             xdg_hotkey=self._xdg_hotkey,
-            evdev_hotkey=self._evdev_hotkey
+            evdev_hotkey=self._evdev_hotkey,
+            target_apps=getattr(self, "_target_apps", [])
         )
         self.saved.emit(macro)

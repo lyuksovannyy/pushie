@@ -19,6 +19,7 @@ class MacroDict(TypedDict):
     work_only_pressed: bool
     loop_while_held: bool
     active: bool
+    target_apps: list[str]
     press_actions: list[ActionDict]
     release_actions: list[ActionDict]
 
@@ -45,7 +46,8 @@ class Macro:
         bind_method: str = "xdg",
         evdev_pass_through: bool = False,
         xdg_hotkey: str = "",
-        evdev_hotkey: str = ""
+        evdev_hotkey: str = "",
+        target_apps: Optional[list[str]] = None
     ) -> None:
         self.id: str = id_
         self.name: str = name
@@ -57,6 +59,7 @@ class Macro:
         self.release_actions: list[ActionSpec] = release_actions or []
         self.bind_method: str = bind_method
         self.evdev_pass_through: bool = evdev_pass_through
+        self.target_apps: list[str] = target_apps or []
 
         if hotkey:
             if bind_method == "evdev":
@@ -94,6 +97,7 @@ class Macro:
             "work_only_pressed": self.work_only_pressed,
             "loop_while_held": self.loop_while_held,
             "active": self.active,
+            "target_apps": self.target_apps,
             "press_actions": [a.to_dict() for a in self.press_actions],
             "release_actions": [a.to_dict() for a in self.release_actions]
         }
@@ -174,6 +178,7 @@ def load_macros() -> list[Macro]:
             bind_method=d.get("bind_method", "xdg"),
             evdev_pass_through=d.get("evdev_pass_through", False),
             xdg_hotkey=d.get("xdg_hotkey", ""),
-            evdev_hotkey=d.get("evdev_hotkey", "")
+            evdev_hotkey=d.get("evdev_hotkey", ""),
+            target_apps=d.get("target_apps", [])
         ))
     return macros

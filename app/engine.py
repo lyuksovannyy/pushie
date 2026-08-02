@@ -223,6 +223,14 @@ class MacroEngine:
                     key = props.get("key", "")
                     logger.debug(f"Action done: tap key '{key}'")
                     subprocess.run(["xdotool", "key", key], check=False)
+                elif atype == "mouse_press":
+                    btn = props.get("button", 1)
+                    logger.debug(f"Action done: press mouse button {btn}")
+                    subprocess.run(["xdotool", "mousedown", str(btn)], check=False)
+                elif atype == "mouse_release":
+                    btn = props.get("button", 1)
+                    logger.debug(f"Action done: release mouse button {btn}")
+                    subprocess.run(["xdotool", "mouseup", str(btn)], check=False)
                 elif atype == "mouse_click":
                     btn = props.get("button", 1)
                     logger.debug(f"Action done: click mouse button {btn}")
