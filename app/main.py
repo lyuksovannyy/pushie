@@ -24,7 +24,12 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Pushie - Push to Talk & Macro Builder")
-        self.resize(700, 500)
+        
+        # Set minimum width to fit 2-column macro grid
+        # 20 (left) + 323*2 (cards) + 14 (spacing) + 28 (right) + 20 (scrollbar) = 728px
+        self.setMinimumWidth(750)
+        self.resize(750, 600)
+        
         self.setStyleSheet("""
             QMainWindow {
                 background-color: #0d1117;
