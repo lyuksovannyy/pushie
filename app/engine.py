@@ -99,24 +99,44 @@ class MacroEngine:
         self._active_macros: dict[str, Macro] = {}   # macro_id -> Macro
         self.lock = threading.Lock()
         self._held_keys: dict[str, set[str]] = {}
-        self._held_keys_thread = threading.Thread(target=self._keep_keys_pressed_loop, daemon=True)
-        self._held_keys_thread.start()
+        self._held_mouse_buttons: dict[str, set[int]] = {}  # macro_id -> set of mouse buttons
+        self._keep_alive_thread = threading.Thread(target=self._keep_inputs_pressed_loop, daemon=True)
+        self._keep_alive_thread.start()
 
-    def _keep_keys_pressed_loop(self) -> None:
+    def _keep_inputs_pressed_loop(self) -> None:
+        """Keep keys and mouse buttons pressed by re-sending down commands every 50ms."""
         while True:
-            time.sleep(0.1)
+            time.sleep(0.05)  # 50ms = 20Hz refresh, prevents premature release
             keys_to_press = set()
+            buttons_to_press = set()
+            
             with self.lock:
                 for keys_set in self._held_keys.values():
                     keys_to_press.update(keys_set)
+                for buttons_set in self._held_mouse_buttons.values():
+                    buttons_to_press.update(buttons_set)
+            
             for key in keys_to_press:
                 if key:
                     subprocess.run(["xdotool", "keydown", key], check=False)
+            
+            for btn in buttons_to_press:
+                if btn:
+                    subprocess.run(["xdotool", "mousedown", str(btn)], check=False)
 
-    def handle_activate(self, macro: Macro) -> None:
+    def handle_activate(self, macro: Macro, current_app: str = "") -> None:
         if not macro.active:
             return
         
+        # Check target apps before execution
+        if macro.target_apps:
+            current_app_lower = current_app.lower() if current_app else ""
+            target_apps_lower = [app.lower() for app in macro.target_apps]
+            if current_app_lower not in target_apps_lower:
+                logger.debug(f"Macro {macro.name} skipped: current app '{current_app}' not in target list {macro.target_apps}")
+                return
+        
+        # Execution lock - prevents re-entry
         if macro.work_only_pressed:
             with self.lock:
                 if self._pressed_states.get(macro.id, False):
@@ -142,9 +162,17 @@ class MacroEngine:
                 else:
                     self._start_macro_thread_locked(macro, macro.release_actions, loop=False)
 
-    def handle_deactivate(self, macro: Macro) -> None:
+    def handle_deactivate(self, macro: Macro, current_app: str = "") -> None:
         if not macro.active:
             return
+        
+        # CRITICAL: Check target apps on deactivate too - prevent stopping when user switches away
+        if macro.target_apps:
+            current_app_lower = current_app.lower() if current_app else ""
+            target_apps_lower = [app.lower() for app in macro.target_apps]
+            if current_app_lower not in target_apps_lower:
+                logger.debug(f"Macro {macro.name} deactivate skipped: current app '{current_app}' not in target list")
+                return
         
         if macro.work_only_pressed:
             with self.lock:
@@ -176,14 +204,22 @@ class MacroEngine:
             logger.debug(f"Stopping action sequence thread for macro ID: {macro_id}")
             t, stop_event = self._running_actions[macro_id]
             stop_event.set()
-            t.join(timeout=0.1)
+            t.join(timeout=0.05)  # Reduced from 0.1s to 0.05s
             del self._running_actions[macro_id]
 
+        # Release all held keys
         if macro_id in self._held_keys:
             released_keys = list(self._held_keys[macro_id])
             for key in released_keys:
                 subprocess.run(["xdotool", "keyup", key], check=False)
             del self._held_keys[macro_id]
+        
+        # Release all held mouse buttons
+        if macro_id in self._held_mouse_buttons:
+            released_buttons = list(self._held_mouse_buttons[macro_id])
+            for btn in released_buttons:
+                subprocess.run(["xdotool", "mouseup", str(btn)], check=False)
+            del self._held_mouse_buttons[macro_id]
 
     def _execute_actions_loop(self, macro_id: str, actions: Sequence[ActionSpec], loop: bool, stop_event: threading.Event) -> None:
         display_w, display_h = 1920, 1080
@@ -227,10 +263,17 @@ class MacroEngine:
                     btn = props.get("button", 1)
                     logger.debug(f"Action done: press mouse button {btn}")
                     subprocess.run(["xdotool", "mousedown", str(btn)], check=False)
+                    with self.lock:
+                        if macro_id not in self._held_mouse_buttons:
+                            self._held_mouse_buttons[macro_id] = set()
+                        self._held_mouse_buttons[macro_id].add(btn)
                 elif atype == "mouse_release":
                     btn = props.get("button", 1)
                     logger.debug(f"Action done: release mouse button {btn}")
                     subprocess.run(["xdotool", "mouseup", str(btn)], check=False)
+                    with self.lock:
+                        if macro_id in self._held_mouse_buttons:
+                            self._held_mouse_buttons[macro_id].discard(btn)
                 elif atype == "mouse_click":
                     btn = props.get("button", 1)
                     logger.debug(f"Action done: click mouse button {btn}")
@@ -293,3 +336,39 @@ class MacroEngine:
             # Wait for all release sequence threads to finish execution before returning
             for t in threads_to_join:
                 t.join(timeout=2.0)
+    
+    def stop_all_fast(self) -> None:
+        """Fast shutdown without waiting for threads - for app exit."""
+        logger.info("Fast shutdown: stopping all macros")
+        with self.lock:
+            # Signal all threads to stop (don't wait for them)
+            for mid in list(self._running_actions.keys()):
+                _, stop_event = self._running_actions[mid]
+                stop_event.set()
+            
+            # Collect all held inputs
+            all_keys = set()
+            all_buttons = set()
+            
+            for keys_set in self._held_keys.values():
+                all_keys.update(keys_set)
+            
+            for buttons_set in self._held_mouse_buttons.values():
+                all_buttons.update(buttons_set)
+            
+            # Clear all state immediately
+            self._running_actions.clear()
+            self._held_keys.clear()
+            self._held_mouse_buttons.clear()
+            self._toggled_states.clear()
+            self._pressed_states.clear()
+            self._active_macros.clear()
+        
+        # Release inputs outside lock (non-blocking)
+        for key in all_keys:
+            subprocess.Popen(["xdotool", "keyup", key], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        
+        for btn in all_buttons:
+            subprocess.Popen(["xdotool", "mouseup", str(btn)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        
+        logger.info("All macros stopped")

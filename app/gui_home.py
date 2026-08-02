@@ -52,6 +52,7 @@ class MacroWidget(QFrame):
     toggle_mode_changed = Signal(str)
     active_toggled = Signal(str, bool)
     bind_method_toggled = Signal(str, str)
+    target_apps_requested = Signal(str)
 
     def __init__(self, macro, parent=None):
         super().__init__(parent)
@@ -104,6 +105,14 @@ class MacroWidget(QFrame):
         self.hotkey_btn.clicked.connect(lambda: self.hotkey_requested.emit(self.macro.id))
         self.hotkey_btn.rightClicked.connect(lambda: self.toggle_mode_changed.emit(self.macro.id))
         header.addWidget(self.hotkey_btn)
+        
+        # Target apps button
+        self.target_apps_btn = QPushButton(self)
+        self.target_apps_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._update_target_apps_button()
+        self.target_apps_btn.clicked.connect(lambda: self.target_apps_requested.emit(self.macro.id))
+        header.addWidget(self.target_apps_btn)
+        
         layout.addLayout(header)
 
         # -- Description --
@@ -231,6 +240,59 @@ class MacroWidget(QFrame):
         self.macro.active = new_state
         self._update_active_state()
         self.active_toggled.emit(self.macro.id, new_state)
+    
+    def _update_target_apps_button(self):
+        count = len(self.macro.target_apps) if self.macro.target_apps else 0
+        if count == 0:
+            text = "All apps"
+            style = """
+                QPushButton {
+                    background-color: #0d1926;
+                    color: #58a6ff;
+                    border: 1px solid #1f6feb;
+                    border-radius: 6px;
+                    padding: 3px 10px;
+                    font-size: 11px;
+                }
+                QPushButton:hover {
+                    background-color: #1c2e4a;
+                    border-color: #58a6ff;
+                }
+            """
+        elif count == 1:
+            text = "Only 1 app"
+            style = """
+                QPushButton {
+                    background-color: #2d1a0d;
+                    color: #f0883e;
+                    border: 1px solid #bd561d;
+                    border-radius: 6px;
+                    padding: 3px 10px;
+                    font-size: 11px;
+                }
+                QPushButton:hover {
+                    background-color: #44260f;
+                    border-color: #f0883e;
+                }
+            """
+        else:
+            text = f"Only {count} apps"
+            style = """
+                QPushButton {
+                    background-color: #2d1a0d;
+                    color: #f0883e;
+                    border: 1px solid #bd561d;
+                    border-radius: 6px;
+                    padding: 3px 10px;
+                    font-size: 11px;
+                }
+                QPushButton:hover {
+                    background-color: #44260f;
+                    border-color: #f0883e;
+                }
+            """
+        self.target_apps_btn.setText(text)
+        self.target_apps_btn.setStyleSheet(style)
 
 
 class HomePage(QWidget):
@@ -240,6 +302,7 @@ class HomePage(QWidget):
     toggle_mode_changed = Signal(str)
     active_toggled = Signal(str, bool)
     bind_method_toggled = Signal(str, str)
+    target_apps_requested = Signal(str)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -338,6 +401,7 @@ class HomePage(QWidget):
             card.toggle_mode_changed.connect(self.toggle_mode_changed.emit)
             card.active_toggled.connect(self.active_toggled.emit)
             card.bind_method_toggled.connect(self.bind_method_toggled.emit)
+            card.target_apps_requested.connect(self.target_apps_requested.emit)
 
             self.grid_layout.addWidget(card, row, col)
             self.cards[macro.id] = card

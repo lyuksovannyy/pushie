@@ -16,6 +16,9 @@ from app.xdg_shortcuts import XDGShortcutsClient
 from app.evdev_shortcuts import EvdevShortcutsClient
 from app.gui_home import HomePage
 from app.gui_editor import MacroEditor
+from app.window_detector import get_active_window_process_name
+import threading
+import time
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -35,6 +38,12 @@ class MainWindow(QMainWindow):
         self.evdev_client = EvdevShortcutsClient(self)
         self.evdev_client.update_macros(self.macros)
         self.recording_evdev_macro_id = None
+        
+        # Active window monitoring
+        self._current_active_app = ""
+        self._monitor_running = True
+        self._monitor_thread = threading.Thread(target=self._monitor_active_window, daemon=True)
+        self._monitor_thread.start()
 
         from PySide6.QtCore import QTimer
         QTimer.singleShot(200, self.evdev_client.scan_devices)
@@ -57,6 +66,7 @@ class MainWindow(QMainWindow):
         self.home_page.toggle_mode_changed.connect(self.toggle_macro_work_mode)
         self.home_page.active_toggled.connect(self.on_active_toggled)
         self.home_page.bind_method_toggled.connect(self.on_bind_method_toggled)
+        self.home_page.target_apps_requested.connect(self.on_target_apps_requested)
 
         self.editor_page.saved.connect(self.on_macro_saved)
         self.editor_page.cancelled.connect(self.navigate_to_home)
@@ -134,8 +144,43 @@ class MainWindow(QMainWindow):
             self.clean_exit()
 
     def clean_exit(self):
-        self.engine.stop_all()
+        """Fast, non-blocking shutdown."""
+        logger.info("Application closing, shutting down...")
+        
+        # Hide window immediately for instant visual feedback
+        self.hide()
+        
+        # Stop monitor thread (max 0.1s wait)
+        self._monitor_running = False
+        if self._monitor_thread.is_alive():
+            self._monitor_thread.join(timeout=0.1)
+        
+        # Stop engine without waiting for release actions
+        self.engine.stop_all_fast()
+        
+        logger.info("Shutdown complete")
+        
+        # Quit immediately
         QApplication.quit()
+    
+    def _monitor_active_window(self):
+        """Background thread that polls active window every ~250ms."""
+        while self._monitor_running:
+            try:
+                app_name = get_active_window_process_name()
+                # CRITICAL: Always update, even if None - prevents stale app name
+                if app_name:
+                    self._current_active_app = app_name.lower()
+                else:
+                    self._current_active_app = ""  # Clear stale value
+            except Exception as e:
+                logger.debug(f"Window detection error: {e}")
+                self._current_active_app = ""  # Clear on error too
+            time.sleep(0.25)
+    
+    def get_current_active_app(self) -> str:
+        """Returns cached active process name (lowercase)."""
+        return self._current_active_app
 
     def on_tray_activated(self, reason):
         if reason == QSystemTrayIcon.ActivationReason.Trigger:
@@ -205,6 +250,21 @@ class MainWindow(QMainWindow):
             macro.bind_method = new_method
             save_macro(macro)
             self.rebind_all_keys()
+            self.home_page.populate_macros(self.macros)
+    
+    def on_target_apps_requested(self, macro_id):
+        logger.info(f"Target apps dialog requested for macro ID: {macro_id}")
+        macro = self.find_macro_by_id(macro_id)
+        if not macro:
+            return
+        
+        from app.gui_app_selector import AppSelectorDialog
+        dialog = AppSelectorDialog(macro, self)
+        if dialog.exec():
+            selected_apps = dialog.get_selected_apps()
+            macro.target_apps = selected_apps
+            save_macro(macro)
+            logger.info(f"Target apps updated for {macro.name}: {selected_apps}")
             self.home_page.populate_macros(self.macros)
 
     def toggle_macro_work_mode(self, macro_id):
@@ -283,13 +343,15 @@ class MainWindow(QMainWindow):
         logger.debug(f"Hotkey event detected: Activated shortcut ID: {shortcut_id}")
         macro = self.find_macro_by_id(shortcut_id)
         if macro and macro.active:
-            self.engine.handle_activate(macro)
+            current_app = self._current_active_app
+            self.engine.handle_activate(macro, current_app)
 
     def on_shortcut_deactivated(self, shortcut_id):
         logger.debug(f"Hotkey event detected: Deactivated shortcut ID: {shortcut_id}")
         macro = self.find_macro_by_id(shortcut_id)
         if macro and macro.active:
-            self.engine.handle_deactivate(macro)
+            current_app = self._current_active_app
+            self.engine.handle_deactivate(macro, current_app)
 
     # --- Helper methods ---
     def find_macro_by_id(self, macro_id):
