@@ -106,13 +106,6 @@ class MacroWidget(QFrame):
         self.hotkey_btn.rightClicked.connect(lambda: self.toggle_mode_changed.emit(self.macro.id))
         header.addWidget(self.hotkey_btn)
         
-        # Target apps button
-        self.target_apps_btn = QPushButton(self)
-        self.target_apps_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._update_target_apps_button()
-        self.target_apps_btn.clicked.connect(lambda: self.target_apps_requested.emit(self.macro.id))
-        header.addWidget(self.target_apps_btn)
-        
         layout.addLayout(header)
 
         # -- Description --
@@ -169,6 +162,13 @@ class MacroWidget(QFrame):
         self._update_method_toggle()
         self.method_toggle_btn.clicked.connect(self._on_method_toggle_clicked)
         footer.addWidget(self.method_toggle_btn)
+        
+        # Target apps button
+        self.target_apps_btn = QPushButton(self)
+        self.target_apps_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._update_target_apps_button()
+        self.target_apps_btn.clicked.connect(lambda: self.target_apps_requested.emit(self.macro.id))
+        footer.addWidget(self.target_apps_btn)
 
         footer.addStretch()
 
