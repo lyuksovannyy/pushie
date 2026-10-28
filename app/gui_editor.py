@@ -694,7 +694,7 @@ class MacroEditor(QWidget):
         mode_layout = QHBoxLayout()
         mode_layout.setSpacing(16)
 
-        self.hold_chk = QCheckBox("Hold Mode (work only when pressed)", self)
+        self.hold_chk = QCheckBox("Hold Mode (work only when pressed - uncheck: fire once per press)", self)
         self.hold_chk.setChecked(True)
         self.hold_chk.setStyleSheet("color: #e6edf3; font-size: 12px;")
         self.hold_chk.stateChanged.connect(self.on_hold_state_changed)

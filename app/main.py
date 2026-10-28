@@ -169,18 +169,31 @@ class MainWindow(QMainWindow):
         QApplication.quit()
     
     def _monitor_active_window(self):
-        """Background thread that polls active window every ~250ms."""
+        """Background thread that polls active window every ~250ms.
+
+        Transient detection failures (fullscreen games, focus flicker,
+        anti-cheat overlays) are tolerated: the last known app is kept for a
+        short grace period instead of blanking the cache, which otherwise
+        makes target-app gated macros skip presses/releases and forces a
+        double press to get them to trigger.
+        """
+        fail_budget = 4  # consecutive failed polls (~1s) before clearing cache
+        fail_streak = 0
         while self._monitor_running:
             try:
                 app_name = get_active_window_process_name()
-                # CRITICAL: Always update, even if None - prevents stale app name
                 if app_name:
                     self._current_active_app = app_name.lower()
+                    fail_streak = 0
                 else:
-                    self._current_active_app = ""  # Clear stale value
+                    fail_streak += 1
+                    if fail_streak >= fail_budget:
+                        self._current_active_app = ""  # Genuinely no active window
             except Exception as e:
                 logger.debug(f"Window detection error: {e}")
-                self._current_active_app = ""  # Clear on error too
+                fail_streak += 1
+                if fail_streak >= fail_budget:
+                    self._current_active_app = ""
             time.sleep(0.25)
     
     def get_current_active_app(self) -> str:

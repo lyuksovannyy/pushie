@@ -180,7 +180,7 @@ class MacroWidget(QFrame):
         layout.addLayout(footer)
 
     def _update_hotkey_text(self):
-        mode = "Hold" if self.macro.work_only_pressed else "Toggle"
+        mode = "Hold" if self.macro.work_only_pressed else "Fire"
         key = self.macro.hotkey or "Click to bind"
         self.hotkey_btn.setText(f"⌨ {key}  [{mode}]")
 

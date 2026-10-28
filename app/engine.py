@@ -33,19 +33,43 @@ class PulseAudioHelper:
         run_cmd("pactl", "set-source-volume", source, volume)
 
     @staticmethod
-    def get_app_sources() -> list[tuple[str, str, str]]:
+    def get_source_index(source: str) -> Optional[str]:
+        """Resolve a source name (e.g. the default mic) to its pactl index."""
+        output = run_cmd("pactl", "list", "sources")
+        if not output:
+            return None
+        current_index: Optional[str] = None
+        for line in output.splitlines():
+            stripped = line.strip()
+            if stripped.startswith("Source #"):
+                current_index = stripped[len("Source #"):].strip()
+            elif stripped.startswith("Name:") and current_index is not None:
+                name = stripped[len("Name:"):].strip().replace('"', '')
+                if name == source:
+                    return current_index
+        return None
+
+    @staticmethod
+    def get_app_sources() -> list[tuple[str, str, str, str]]:
+        """Returns (index, app_name, binary, attached_source_index) tuples.
+
+        attached_source_index is "" when it cannot be determined.
+        """
         output = run_cmd("pactl", "list", "source-outputs")
         if not output:
             return []
         sources = output.split("Source Output")
-        app_sources: list[tuple[str, str, str]] = []
+        app_sources: list[tuple[str, str, str, str]] = []
         for source in sources:
             index: Optional[str] = None
             name: Optional[str] = None
             binary: Optional[str] = None
+            attached_source: str = ""
             for line in source.splitlines():
                 line = line.strip()
-                if line.startswith("object.serial"):
+                if line.startswith("Source:"):
+                    attached_source = line.split(":", 1)[1].strip()
+                elif line.startswith("object.serial"):
                     index = line.split(" = ")[1].replace('"', '').strip()
                 elif line.startswith("application.name") or line.startswith("node.name"):
                     name = line.split(" = ")[1].replace('"', '').strip()
@@ -54,7 +78,7 @@ class PulseAudioHelper:
             binary = binary or "unknown*"
             if index is None or name is None:
                 continue
-            app_sources.append((index, name, binary))
+            app_sources.append((index, name, binary, attached_source))
         return app_sources
 
     @classmethod
@@ -70,22 +94,33 @@ class PulseAudioHelper:
             else:
                 target = item.lower()
                 allowed_apps[target] = True
-        
+
+        # Only ever touch capture streams attached to the mic itself. Streams
+        # from other sources (e.g. sink monitors) belong to screen recorders
+        # like OBS/Discord capturing desktop audio - those carry other apps'
+        # sounds and must never be modified by mic rules.
+        mic_index = cls.get_source_index(source)
         app_sources = cls.get_app_sources()
         if not app_sources:
             return
-        
-        for index, app_name, app_binary in app_sources:
+
+        for index, app_name, app_binary, attached_source in app_sources:
+            if mic_index and attached_source and attached_source != mic_index:
+                logger.debug(f"Skipping source-output {index} ({app_name}): not capturing from mic '{source}'")
+                continue
+
             app_lc = app_name.lower()
             binary_lc = app_binary.lower()
             
             def _name_matches(name_lc: str, rules_dict: Mapping[str, bool]) -> bool:
                 return any(k in name_lc for k in rules_dict if k != "all")
 
-            if "all" in allowed_apps or _name_matches(app_lc, allowed_apps) or _name_matches(binary_lc, allowed_apps):
-                vol = volume
-            elif "all" in muted_apps or _name_matches(app_lc, muted_apps) or _name_matches(binary_lc, muted_apps):
+            # Explicit mutes must win over allows (e.g. "!vesktop, discord, all"
+            # keeps vesktop's mic muted while unmuting everyone else).
+            if "all" in muted_apps or _name_matches(app_lc, muted_apps) or _name_matches(binary_lc, muted_apps):
                 vol = "0.0"
+            elif "all" in allowed_apps or _name_matches(app_lc, allowed_apps) or _name_matches(binary_lc, allowed_apps):
+                vol = volume
             else:
                 vol = volume
             
@@ -136,10 +171,11 @@ class MacroEngine:
                 logger.debug(f"Macro {macro.name} skipped: current app '{current_app}' not in target list {macro.target_apps}")
                 return
         
-        # Execution lock - prevents re-entry
+        # Execution lock - prevents re-entry (e.g. portal auto-repeat)
         if macro.work_only_pressed:
             with self.lock:
                 if self._pressed_states.get(macro.id, False):
+                    logger.debug(f"Macro {macro.name} press swallowed: already pressed (missed release?)")
                     return
                 self._pressed_states[macro.id] = True
         
@@ -151,34 +187,29 @@ class MacroEngine:
                 self._stop_macro_thread_locked(macro.id)
                 self._start_macro_thread_locked(macro, macro.press_actions, loop=macro.loop_while_held)
             else:
-                # Toggle mode: toggle current state
-                current_state = self._toggled_states.get(macro.id, False)
-                new_state = not current_state
-                self._toggled_states[macro.id] = new_state
-                
+                # Fire-and-forget: run press actions once per activation.
+                # Release actions are not used in this mode.
                 self._stop_macro_thread_locked(macro.id)
-                if new_state:
-                    self._start_macro_thread_locked(macro, macro.press_actions, loop=macro.loop_while_held)
-                else:
-                    self._start_macro_thread_locked(macro, macro.release_actions, loop=False)
+                self._start_macro_thread_locked(macro, macro.press_actions, loop=False)
 
     def handle_deactivate(self, macro: Macro, current_app: str = "") -> None:
         if not macro.active:
             return
         
-        # CRITICAL: Check target apps on deactivate too - prevent stopping when user switches away
-        if macro.target_apps:
-            current_app_lower = current_app.lower() if current_app else ""
-            target_apps_lower = [app.lower() for app in macro.target_apps]
-            if current_app_lower not in target_apps_lower:
-                logger.debug(f"Macro {macro.name} deactivate skipped: current app '{current_app}' not in target list")
-                return
-        
         if macro.work_only_pressed:
+            # A physical key release must ALWAYS be processed. Gating this on
+            # the active-window check leaves the macro stuck in "pressed"
+            # state whenever app detection misses (fullscreen games, focus
+            # flicker, Proton window classes): the next press is then
+            # swallowed by the re-entry guard in handle_activate, forcing a
+            # double press before anything happens, and release actions
+            # (e.g. mic mute) never run. Target-app gating stays on activate
+            # only - spurious releases are already ignored below.
             with self.lock:
-                if not self._pressed_states.get(macro.id, False):
-                    return
+                was_pressed = self._pressed_states.get(macro.id, False)
                 self._pressed_states[macro.id] = False
+            if not was_pressed:
+                return
             logger.info(f"Deactivating macro: {macro.name} (ID: {macro.id})")
             with self.lock:
                 self._active_macros[macro.id] = macro
@@ -323,11 +354,13 @@ class MacroEngine:
             self._toggled_states.clear()
             self._pressed_states.clear()
             
-            # For each macro that was running, run its release sequence if available
+            # For each macro that was running, run its release sequence if available.
+            # Only hold-mode macros have a release phase; fire-and-forget macros
+            # intentionally have nothing to release.
             threads_to_join = []
             for mid in running_macro_ids:
                 macro = self._active_macros.get(mid)
-                if macro and macro.release_actions:
+                if macro and macro.work_only_pressed and macro.release_actions:
                     self._start_macro_thread_locked(macro, macro.release_actions, loop=False)
                     if macro.id in self._running_actions:
                         t, _ = self._running_actions[macro.id]
