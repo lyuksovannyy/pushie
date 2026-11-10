@@ -83,6 +83,22 @@ class TestMicRules(unittest.TestCase):
         vols = self._vol_calls()
         self.assertEqual(vols, {"150": "1.0", "152": "1.0"})
 
+    def test_named_allow_wins_over_mute_all(self):
+        """'discord, !all' is push-to-talk for Discord only: everyone else muted."""
+        PulseAudioHelper.apply_rules(["discord", "!all"], "alsa_input.usb-mic-0005.analog-stereo", "1.0")
+        vols = self._vol_calls()
+        self.assertEqual(vols, {"150": "0.0", "152": "1.0"})
+
+    def test_named_mute_wins_over_allow_all(self):
+        """'all, !discord' talks to everyone except Discord."""
+        PulseAudioHelper.apply_rules(["all", "!discord"], "alsa_input.usb-mic-0005.analog-stereo", "1.0")
+        vols = self._vol_calls()
+        self.assertEqual(vols, {"150": "1.0", "152": "0.0"})
+
+    def test_mute_all(self):
+        PulseAudioHelper.apply_rules(["!all"], "alsa_input.usb-mic-0005.analog-stereo", "1.0")
+        self.assertEqual(self._vol_calls(), {"150": "0.0", "152": "0.0"})
+
 
 if __name__ == "__main__":
     unittest.main()

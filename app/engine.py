@@ -115,15 +115,19 @@ class PulseAudioHelper:
             def _name_matches(name_lc: str, rules_dict: Mapping[str, bool]) -> bool:
                 return any(k in name_lc for k in rules_dict if k != "all")
 
-            # Explicit mutes must win over allows (e.g. "!vesktop, discord, all"
-            # keeps vesktop's mic muted while unmuting everyone else).
-            if "all" in muted_apps or _name_matches(app_lc, muted_apps) or _name_matches(binary_lc, muted_apps):
+            # A rule naming the app beats the catch-all "all" / "!all", so
+            # "discord, !all" unmutes only Discord and "!vesktop, all" mutes
+            # only vesktop. If an app is both muted and allowed by name, the
+            # mute wins. Apps no rule covers are left unmuted.
+            if _name_matches(app_lc, muted_apps) or _name_matches(binary_lc, muted_apps):
                 vol = "0.0"
-            elif "all" in allowed_apps or _name_matches(app_lc, allowed_apps) or _name_matches(binary_lc, allowed_apps):
+            elif _name_matches(app_lc, allowed_apps) or _name_matches(binary_lc, allowed_apps):
                 vol = volume
+            elif "all" in muted_apps:
+                vol = "0.0"
             else:
                 vol = volume
-            
+
             run_cmd("pactl", "set-source-output-volume", index, vol)
 
 class MacroEngine:
