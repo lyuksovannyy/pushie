@@ -1,0 +1,44 @@
+name: Build
+
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential pkg-config \
+            libdbus-1-dev libglib2.0-dev libgirepository-2.0-dev libcairo2-dev \
+            libegl1 libgl1 libxkbcommon0 libfontconfig1 libdbus-1-3
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+
+      - name: Install Python dependencies
+        run: uv sync
+
+      - name: Run tests
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: |
+          uv run python -m unittest \
+            tests/test_storage.py tests/test_engine.py tests/test_xdg_shortcuts.py \
+            tests/test_mic_rules.py tests/test_press_release_state.py \
+            tests/test_window_detector.py
+
+      - name: Build standalone binary
+        run: ./build.sh
+
+      - name: Upload binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: pushie-linux-x86_64
+          path: dist/pushie
+          if-no-files-found: error

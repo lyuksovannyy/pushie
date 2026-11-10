@@ -1,26 +1,83 @@
 #!/usr/bin/env bash
 set -e
 
-# Detect if the binary pushie is placed in a /bin directory
-BINARY_PATH=""
-for path in "/usr/local/bin/pushie" "/usr/bin/pushie" "/bin/pushie"; do
-  if [ -f "$path" ]; then
-    BINARY_PATH="$path"
-    break
-  fi
-done
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+BUILT_BINARY="$SCRIPT_DIR/dist/pushie"
+INSTALL_PATH="/usr/bin/pushie"
 
-if [ -z "$BINARY_PATH" ]; then
-  echo "Error: 'pushie' binary must be placed in a /bin directory (e.g., /usr/bin, /usr/local/bin, or /bin) before running this script."
+# Ask a yes/no question, default yes. Usage: confirm "Question?"
+confirm() {
+  local reply
+  read -r -p "$1 [Y/n] " reply || reply="n"
+  case "$reply" in
+    ""|[yY]|[yY][eE][sS]) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+# Run a command as root, using sudo only when needed
+as_root() {
+  if [ "$EUID" -eq 0 ]; then
+    "$@"
+  else
+    sudo "$@"
+  fi
+}
+
+# Find an already installed binary
+find_installed() {
+  local path
+  for path in "/usr/bin/pushie" "/usr/local/bin/pushie" "/bin/pushie"; do
+    if [ -f "$path" ]; then
+      echo "$path"
+      return 0
+    fi
+  done
+  return 1
+}
+
+# --- Step 1: install the binary ---
+BINARY_PATH="$(find_installed || true)"
+
+if [ -f "$BUILT_BINARY" ]; then
+  if [ -z "$BINARY_PATH" ]; then
+    QUESTION="Copy $BUILT_BINARY to $INSTALL_PATH?"
+  elif cmp -s "$BUILT_BINARY" "$BINARY_PATH"; then
+    QUESTION=""
+    echo "Installed binary at $BINARY_PATH is already up to date."
+  else
+    INSTALL_PATH="$BINARY_PATH"
+    QUESTION="Replace $BINARY_PATH with the build from $BUILT_BINARY?"
+  fi
+
+  if [ -n "$QUESTION" ] && confirm "$QUESTION"; then
+    as_root install -m 755 "$BUILT_BINARY" "$INSTALL_PATH"
+    BINARY_PATH="$INSTALL_PATH"
+    echo "Installed pushie to: $BINARY_PATH"
+  fi
+elif [ -z "$BINARY_PATH" ]; then
+  echo "Error: no built binary at $BUILT_BINARY and pushie is not installed."
+  echo "Run ./build.sh first, then run this script again."
   exit 1
 fi
 
-echo "Found pushie binary at: $BINARY_PATH"
+if [ -z "$BINARY_PATH" ]; then
+  echo "Error: pushie is not installed, so there is nothing to register."
+  exit 1
+fi
 
-# Setup the icon path
-ICON_SRC="$(dirname "$0")/logo.png"
+echo "Using pushie binary at: $BINARY_PATH"
+
+# --- Step 2: register the desktop entry ---
+if ! confirm "Register Pushie as a desktop application?"; then
+  echo "Skipped desktop registration."
+  exit 0
+fi
+
+ICON_SRC="$SCRIPT_DIR/logo.png"
 if [ ! -f "$ICON_SRC" ]; then
-  ICON_SRC="/home/lebron/PyCharmProjects/pushie/logo.png"
+  echo "Error: icon not found at $ICON_SRC"
+  exit 1
 fi
 
 ICON_DST=""
@@ -45,7 +102,7 @@ mkdir -p "$DESKTOP_DIR"
 DESKTOP_FILE="$DESKTOP_DIR/pushie.desktop"
 
 # Create Desktop entry file
-cat <<EOF > "$DESKTOP_FILE"
+cat <<DESKTOP > "$DESKTOP_FILE"
 [Desktop Entry]
 Type=Application
 Name=Pushie
@@ -54,7 +111,7 @@ Exec=$BINARY_PATH
 Icon=$ICON_DST
 Terminal=false
 Categories=Utility;
-EOF
+DESKTOP
 
 chmod +x "$DESKTOP_FILE"
 update-desktop-database "$DESKTOP_DIR" 2>/dev/null || true

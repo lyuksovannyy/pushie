@@ -56,14 +56,8 @@ Execute the bundle shell script which creates a single binary of Pushie with bui
 ```
 This produces the standalone binary at: `./dist/pushie`
 
-### 2. Install to system:
-Move the compiled application to your system binary directory (requires sudo write permission):
-```bash
-sudo cp dist/pushie /usr/local/bin/
-```
-
-### 3. Register Desktop Desktop Entry Launcher:
-Register the launcher and copy the application layout icons to desktop search indexes:
+### 2. Install and register:
+Run the install script. It offers to copy `dist/pushie` to `/usr/bin` (asks for sudo) and to register the desktop launcher and icon:
 ```bash
 ./register-app.sh
 ```
