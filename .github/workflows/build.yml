@@ -7,6 +7,8 @@ on:
 jobs:
   build:
     runs-on: ubuntu-24.04
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
 
@@ -42,3 +44,18 @@ jobs:
           name: pushie-linux-x86_64
           path: dist/pushie
           if-no-files-found: error
+
+      # Rolling release: move the `release` tag to this commit and replace the binary.
+      # GitHub only; skipped on other forges that run this workflow.
+      - name: Update release
+        if: github.ref == 'refs/heads/main' && github.server_url == 'https://github.com'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git tag -f release
+          git push -f origin release
+          if ! gh release view release >/dev/null 2>&1; then
+            gh release create release --title "Compiled single binary" \
+              --notes "Latest build of the main branch."
+          fi
+          gh release upload release dist/pushie --clobber
