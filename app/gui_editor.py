@@ -7,6 +7,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, Signal, QMimeData
 from PySide6.QtGui import QDrag, QPixmap, QCursor
 from app.storage import Macro, ActionSpec
+from app.gui_rules_input import RulesLineEdit
 
 # Shared input style
 _INPUT = """
@@ -292,7 +293,8 @@ class ActionRow(QFrame):
             lbl.setStyleSheet(_LABEL)
             self.properties_layout.addWidget(lbl)
 
-            rules_in = QLineEdit(self)
+            # QLineEdit subclass: findChild(QLineEdit, "prop_rules") still finds it
+            rules_in = RulesLineEdit(self)
             rules_in.setObjectName("prop_rules")
             rules_in.setPlaceholderText("!vesktop, discord, all")
             _styled_input(rules_in)
