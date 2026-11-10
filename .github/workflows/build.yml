@@ -18,7 +18,11 @@ jobs:
           sudo apt-get install -y --no-install-recommends \
             build-essential pkg-config \
             libdbus-1-dev libglib2.0-dev libgirepository-2.0-dev libcairo2-dev \
-            libegl1 libgl1 libxkbcommon0 libfontconfig1 libdbus-1-3
+            libegl1 libgl1 libxkbcommon0 libfontconfig1 libdbus-1-3 \
+            gir1.2-glib-2.0 gir1.2-girepository-3.0 dbus-daemon \
+            libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 \
+            libxcb-render-util0 libxcb-shape0 libxcb-util1 libxcb-xkb1 \
+            libxkbcommon-x11-0
 
       - name: Install uv
         uses: astral-sh/setup-uv@v6
@@ -37,6 +41,19 @@ jobs:
 
       - name: Build standalone binary
         run: ./build.sh
+
+      # The app runs until interrupted, so surviving the timeout (exit 124)
+      # means it started; a broken bundle crashes at import and exits early.
+      - name: Smoke test binary
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: |
+          status=0
+          dbus-run-session -- timeout -s INT -k 5 10 dist/pushie --minimized || status=$?
+          if [ "$status" -ne 124 ]; then
+            echo "Binary exited early with status $status"
+            exit 1
+          fi
 
       - name: Upload binary
         uses: actions/upload-artifact@v4
