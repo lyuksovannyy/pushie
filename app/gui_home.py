@@ -425,8 +425,10 @@ class HomePage(QWidget):
             self.evdev_status_lbl.show()
         elif status == "ready":
             self.evdev_status_lbl.hide()
-        elif status == "unavailable":
-            self.evdev_status_lbl.setText("⚠️ evdev unavailable")
+        elif status in ("unavailable", "limited"):
+            self.evdev_status_lbl.setText(
+                "⚠️ evdev unavailable" if status == "unavailable" else "⚠️ evdev limited"
+            )
             self.evdev_status_lbl.setStyleSheet("""
                 color: #f85149;
                 font-size: 11px;

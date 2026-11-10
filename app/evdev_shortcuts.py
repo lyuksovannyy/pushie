@@ -48,7 +48,7 @@ class EvdevShortcutsClient(QObject):
     shortcut_activated = Signal(str)
     shortcut_deactivated = Signal(str)
     raw_key_pressed = Signal(str)
-    status_changed = Signal(str) # "scanning", "ready", "unavailable"
+    status_changed = Signal(str) # "scanning", "ready", "limited", "unavailable"
 
     def __init__(self, parent: Optional[QObject] = None) -> None:
         super().__init__(parent)
@@ -126,9 +126,17 @@ class EvdevShortcutsClient(QObject):
         # Check if we successfully opened at least one key-capable device
         with self.lock:
             any_device = len(self.devices) > 0
+        # evdev.list_devices() silently skips devices we have no permission for,
+        # so a few user-accessible ones (e.g. Steam controllers) can hide the
+        # fact that the real keyboards are unreadable.
+        import glob
+        any_denied = any(
+            not os.access(p, os.R_OK | os.W_OK)
+            for p in glob.glob("/dev/input/event*")
+        )
         if any_device:
             try:
-                self.status_changed.emit("ready")
+                self.status_changed.emit("limited" if any_denied else "ready")
             except RuntimeError:
                 pass
         else:

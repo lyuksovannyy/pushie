@@ -43,6 +43,9 @@ class MainWindow(QMainWindow):
         self.evdev_client = EvdevShortcutsClient(self)
         self.evdev_client.update_macros(self.macros)
         self.recording_evdev_macro_id = None
+        self.evdev_status = "scanning"
+        self._evdev_dialog_auto_shown = False
+        self._evdev_dialog_open = False
         
         # Active window monitoring
         self._current_active_app = ""
@@ -88,6 +91,7 @@ class MainWindow(QMainWindow):
         self.evdev_client.shortcut_deactivated.connect(self.on_shortcut_deactivated)
         self.evdev_client.raw_key_pressed.connect(self.on_evdev_raw_key_pressed)
         self.evdev_client.status_changed.connect(self.home_page.set_evdev_status)
+        self.evdev_client.status_changed.connect(self.on_evdev_status_changed)
 
         # Wire clean exit hook to stop all macros when app exits
         q_app = QApplication.instance()
@@ -269,6 +273,8 @@ class MainWindow(QMainWindow):
             save_macro(macro)
             self.rebind_all_keys()
             self.home_page.populate_macros(self.macros)
+            if new_method == "evdev" and self.evdev_status in ("unavailable", "limited"):
+                self.show_evdev_setup_dialog()
     
     def on_target_apps_requested(self, macro_id):
         logger.info(f"Target apps dialog requested for macro ID: {macro_id}")
@@ -301,6 +307,10 @@ class MainWindow(QMainWindow):
             return
         
         if getattr(macro, "bind_method", "xdg") == "evdev":
+            if self.evdev_status == "unavailable":
+                # No readable devices: recording would wait for a key forever
+                self.show_evdev_setup_dialog()
+                return
             if getattr(self, "recording_evdev_macro_id", None) == macro_id:
                 logger.info(f"User cancelled evdev binder for macro ID: {macro_id}")
                 self.recording_evdev_macro_id = None
@@ -312,6 +322,28 @@ class MainWindow(QMainWindow):
         else:
             logger.info(f"User requested portal binder for macro ID: {macro_id}")
             self.shortcuts_client.configure_shortcuts()
+
+    def on_evdev_status_changed(self, status):
+        self.evdev_status = status
+        if status not in ("unavailable", "limited") or self._evdev_dialog_auto_shown:
+            return
+        # Warn once per session if existing macros depend on evdev
+        uses_evdev = any(
+            m.active and getattr(m, "bind_method", "xdg") == "evdev" for m in self.macros
+        )
+        if uses_evdev and self.isVisible():
+            self._evdev_dialog_auto_shown = True
+            self.show_evdev_setup_dialog()
+
+    def show_evdev_setup_dialog(self):
+        if self._evdev_dialog_open:
+            return
+        from app.gui_evdev_dialog import EvdevSetupDialog
+        self._evdev_dialog_open = True
+        try:
+            EvdevSetupDialog(self).exec()
+        finally:
+            self._evdev_dialog_open = False
 
     def on_evdev_raw_key_pressed(self, key):
         macro_id = getattr(self, "recording_evdev_macro_id", None)
